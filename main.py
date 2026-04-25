@@ -854,44 +854,141 @@ class PowerMonitor:
     def __init__(self):
         self.last_check = 0
         self.cached_power_state = None
-    
     def check_power_state(self) -> Dict[str, Any]:
         if time.time() - self.last_check < 30 and self.cached_power_state:
             return self.cached_power_state
-        try:
-            if ANDROID_AVAILABLE:
-                context = AndroidAppContext.get_context()
-                if context:
-                    try:
-                        ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-                        battery_status = context.registerReceiver(None, ifilter)
-                        if battery_status:
-                            level = battery_status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-                            scale = battery_status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-                            status = battery_status.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-                            plugged = battery_status.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
-                            
-                            battery_pct = 100
-                            if level >= 0 and scale > 0:
-                                battery_pct = int(level * 100 / scale)
-                            
-                            on_ac = plugged > 0 or status == BatteryManager.BATTERY_STATUS_CHARGING or status == BatteryManager.BATTERY_STATUS_FULL
-                            charging = status == BatteryManager.BATTERY_STATUS_CHARGING or status == BatteryManager.BATTERY_STATUS_FULL
-                            
-                            result = {
-                                'on_ac': on_ac,
-                                'battery_percent': battery_pct,
-                                'charging': charging
-                            }
-                            self.cached_power_state = result
-                            self.last_check = time.time()
-                            return result
-                    except:
-                        pass
+    
+            result = {'on_ac': True, 'battery_percent': 100, 'charging': False}
+    
+    try:
+        if ANDROID_AVAILABLE:
+            context = AndroidAppContext.get_context()
             
-            result = {'on_ac': True, 'battery_percent': 100, 'charging': False}
-        except:
-            result = {'on_ac': True, 'battery_percent': 100, 'charging': False}
+            # METHOD 1: IntentFilter broadcast (works on most devices)
+            if context:
+                try:
+                    ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                    battery_status = context.registerReceiver(None, ifilter)
+                    
+                    if battery_status:
+                        level = battery_status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                        scale = battery_status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                        status = battery_status.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                        plugged = battery_status.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
+                        
+                        battery_pct = 100
+                        if level >= 0 and scale > 0:
+                            battery_pct = int(level * 100 / scale)
+                        
+                        on_ac = (plugged > 0 or 
+                                status == BatteryManager.BATTERY_STATUS_CHARGING or 
+                                status == BatteryManager.BATTERY_STATUS_FULL)
+                        charging = (status == BatteryManager.BATTERY_STATUS_CHARGING or 
+                                   status == BatteryManager.BATTERY_STATUS_FULL)
+                        
+                        result = {
+                            'on_ac': on_ac,
+                            'battery_percent': battery_pct,
+                            'charging': charging
+                        }
+                        self.cached_power_state = result
+                        self.last_check = time.time()
+                        return result
+                except:
+                    pass
+            
+            # METHOD 2: BatteryManager system service (API 21+)
+            if context:
+                try:
+                    bm = cast('android.os.BatteryManager',
+                             context.getSystemService(Context.BATTERY_SERVICE))
+                    if bm:
+                        # Try getIntProperty first (API 21+)
+                        try:
+                            level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                            if level > 0:
+                                # Check charging status
+                                status = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
+                                on_ac = status in [BatteryManager.BATTERY_STATUS_CHARGING,
+                                                   BatteryManager.BATTERY_STATUS_FULL]
+                                result = {
+                                    'on_ac': on_ac,
+                                    'battery_percent': level,
+                                    'charging': on_ac
+                                }
+                                self.cached_power_state = result
+                                self.last_check = time.time()
+                                return result
+                        except:
+                            pass
+                        
+                        # Fallback: ACTION_BATTERY_CHANGED sticky intent already registered
+                        # This returns cached data without registering again
+                        try:
+                            sticky_intent = context.registerReceiver(None, 
+                                IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                            if sticky_intent:
+                                level = sticky_intent.getIntExtra('level', 100)
+                                scale = sticky_intent.getIntExtra('scale', 100)
+                                plugged = sticky_intent.getIntExtra('plugged', 1)
+                                result = {
+                                    'on_ac': plugged != 0,
+                                    'battery_percent': int(level * 100 / scale) if scale > 0 else 100,
+                                    'charging': plugged != 0
+                                }
+                                self.cached_power_state = result
+                                self.last_check = time.time()
+                                return result
+                        except:
+                            pass
+                except:
+                    pass
+            
+            # METHOD 3: Read from /sys/class/power_supply (Linux-based, needs root on some devices)
+            try:
+                ac_paths = [
+                    '/sys/class/power_supply/AC/online',
+                    '/sys/class/power_supply/ac/online',
+                    '/sys/class/power_supply/battery/status',
+                ]
+                battery_paths = [
+                    '/sys/class/power_supply/battery/capacity',
+                    '/sys/class/power_supply/BAT0/capacity',
+                ]
+                
+                # Check AC status
+                on_ac = False
+                for ac_path in ac_paths:
+                    if os.path.exists(ac_path) and os.access(ac_path, os.R_OK):
+                        with open(ac_path, 'r') as f:
+                            content = f.read().strip().lower()
+                            if content in ['1', 'charging', 'full']:
+                                on_ac = True
+                                break
+                
+                # Check battery level
+                battery_pct = 100
+                for bat_path in battery_paths:
+                    if os.path.exists(bat_path) and os.access(bat_path, os.R_OK):
+                        with open(bat_path, 'r') as f:
+                            battery_pct = int(f.read().strip())
+                            break
+                
+                result = {
+                    'on_ac': on_ac,
+                    'battery_percent': battery_pct,
+                    'charging': on_ac
+                }
+                self.cached_power_state = result
+                self.last_check = time.time()
+                return result
+            except:
+                pass
+    
+    except:
+        pass
+    
+        # If ALL methods fail, assume AC power (safe default)
         self.cached_power_state = result
         self.last_check = time.time()
         return result
