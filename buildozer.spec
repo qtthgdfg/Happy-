@@ -21,7 +21,7 @@ android.logcat_filters = *:S
 android.foreground_service_type = dataSync
 android.entrypoint = main.py
 android.service = myservice:main.py
-p4a.branch = master
+p4a.branch = develop
 p4a.bootstrap = sdl2
 
 [buildozer]
