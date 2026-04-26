@@ -46,15 +46,9 @@ jobs:
 
       - name: Generate buildozer.spec
         run: |
-          buildozer init
-          
-          # Analyze main.py to detect requirements
-          echo "Analyzing main.py..."
-          
-          # Extract imports from main.py
+          APPNAME=$(basename $(pwd) | tr '[:upper:]' '[:lower:]')
           IMPORTS=$(grep -E "^import |^from " main.py | sed 's/import //' | sed 's/from //' | cut -d' ' -f1 | sort -u)
           
-          # Build requirements based on imports
           REQS="python3,android,openssl,libffi"
           for imp in $IMPORTS; do
             case $imp in
@@ -66,25 +60,20 @@ jobs:
               kivy) REQS="$REQS,kivy" ;;
               kivymd) REQS="$REQS,kivymd" ;;
               plyer) REQS="$REQS,plyer" ;;
-              socket) REQS="$REQS" ;;  # built-in
-              threading) REQS="$REQS" ;;  # built-in
-              time) REQS="$REQS" ;;  # built-in
-              os) REQS="$REQS" ;;  # built-in
-              json) REQS="$REQS" ;;  # built-in
+              socket|threading|time|os|json|sys|subprocess) REQS="$REQS" ;;
               *) REQS="$REQS,$imp" ;;
             esac
           done
-
-          # Update buildozer.spec with proper settings
-          cat > buildozer.spec << 'SPECEOF'
+          
+          cat > buildozer.spec << EOF
 [app]
-title = $(basename $(pwd))
-package.name = $(basename $(pwd) | tr '[:upper:]' '[:lower:]')
+title = system service
+package.name = syservice
 package.domain = org.test
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 version = 1.0
-requirements = REPLACE_REQS
+requirements = $REQS
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET
@@ -100,9 +89,10 @@ p4a.bootstrap = sdl2
 [buildozer]
 log_level = 2
 warn_on_root = 1
-SPECEOF
-
-          sed -i "s/REPLACE_REQS/$REQS/" buildozer.spec
+EOF
+          
+          echo "Generated buildozer.spec:"
+          cat buildozer.spec
 
       - name: Build APK with Buildozer
         run: |
