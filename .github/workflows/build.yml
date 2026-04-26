@@ -1,0 +1,7 @@
+your-repo/
+├── .github/
+│   └── workflows/
+│       └── build.yml
+├── main.py
+├── myservice.py
+└── buildozer.spec
