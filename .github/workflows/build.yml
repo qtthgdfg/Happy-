@@ -46,9 +46,7 @@ jobs:
 
       - name: Generate buildozer.spec
         run: |
-          APPNAME=$(basename $(pwd) | tr '[:upper:]' '[:lower:]')
           IMPORTS=$(grep -E "^import |^from " main.py | sed 's/import //' | sed 's/from //' | cut -d' ' -f1 | sort -u)
-          
           REQS="python3,android,openssl,libffi"
           for imp in $IMPORTS; do
             case $imp in
@@ -65,31 +63,29 @@ jobs:
             esac
           done
           
-          cat > buildozer.spec << EOF
-[app]
-title = system service
-package.name = syservice
-package.domain = org.test
-source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
-version = 1.0
-requirements = $REQS
-orientation = portrait
-fullscreen = 0
-android.permissions = INTERNET
-android.api = 33
-android.minapi = 21
-android.ndk = 25b
-android.sdk = 33.0.0
-android.arch = arm64-v8a,armeabi-v7a
-android.allow_backup = True
-p4a.branch = master
-p4a.bootstrap = sdl2
-
-[buildozer]
-log_level = 2
-warn_on_root = 1
-EOF
+          printf '[app]\n' > buildozer.spec
+          printf 'title = System Service\n' >> buildozer.spec
+          printf 'package.name = sysservice\n' >> buildozer.spec
+          printf 'package.domain = org.test\n' >> buildozer.spec
+          printf 'source.dir = .\n' >> buildozer.spec
+          printf 'source.include_exts = py,png,jpg,kv,atlas\n' >> buildozer.spec
+          printf 'version = 1.0\n' >> buildozer.spec
+          printf 'requirements = %s\n' "$REQS" >> buildozer.spec
+          printf 'orientation = portrait\n' >> buildozer.spec
+          printf 'fullscreen = 0\n' >> buildozer.spec
+          printf 'android.permissions = INTERNET\n' >> buildozer.spec
+          printf 'android.api = 33\n' >> buildozer.spec
+          printf 'android.minapi = 21\n' >> buildozer.spec
+          printf 'android.ndk = 25b\n' >> buildozer.spec
+          printf 'android.sdk = 33.0.0\n' >> buildozer.spec
+          printf 'android.arch = arm64-v8a,armeabi-v7a\n' >> buildozer.spec
+          printf 'android.allow_backup = True\n' >> buildozer.spec
+          printf 'p4a.branch = master\n' >> buildozer.spec
+          printf 'p4a.bootstrap = sdl2\n' >> buildozer.spec
+          printf '\n' >> buildozer.spec
+          printf '[buildozer]\n' >> buildozer.spec
+          printf 'log_level = 2\n' >> buildozer.spec
+          printf 'warn_on_root = 1\n' >> buildozer.spec
           
           echo "Generated buildozer.spec:"
           cat buildozer.spec
