@@ -43,14 +43,17 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install buildozer cython
-          
-      - name: Clear old Android SDK cache
+
+      - name: Clear old Android SDK
         run: rm -rf ~/.buildozer/android/platform/android-sdk
-  
-      - name: Build APK with Buildozer
+
+      - name: Pre-accept Android SDK licenses
         run: |
-          yes | ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          buildozer android debug
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+
+      - name: Build APK with Buildozer
+        run: buildozer android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
