@@ -5,7 +5,7 @@ package.domain = com.system.service
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 version = 1.0
-requirements = python3,android
+requirements = python3,android,openssl,libffi,requests,urllib3,chardet,idna,certifi
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,FOREGROUND_SERVICE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,READ_PHONE_STATE,READ_EXTERNAL_STORAGE
@@ -21,6 +21,9 @@ android.logcat_filters = *:S
 android.foreground_service_type = dataSync
 android.entrypoint = myservice.py
 android.wakelock = True
+android.boot_receiver = True
+android.broadcast_receiver = BootReceiver
+service.name = SystemForegroundService
 p4a.branch = develop
 
 [buildozer]
