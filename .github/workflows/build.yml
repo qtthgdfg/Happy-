@@ -43,7 +43,10 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install buildozer cython
-
+          
+      - name: Clear old Android SDK cache
+        run: rm -rf ~/.buildozer/android/platform/android-sdk
+  
       - name: Build APK with Buildozer
         run: |
           yes | ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
