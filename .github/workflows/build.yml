@@ -1,104 +1,57 @@
-name: Build Kivy Android APK
+name: Build Android APK
+
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install system dependencies
+      - name: Install Buildozer and system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            git \
-            python3-dev \
-            python3-pip \
-            openjdk-17-jdk \
-            autoconf \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
-            libtinfo6 \
-            cmake \
-            libffi-dev \
-            libssl-dev \
-            unzip \
-            wget
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential git zip unzip openjdk-17-jdk \
+            autoconf automake libtool pkg-config \
+            libffi-dev libssl-dev zlib1g-dev libltdl-dev
+          pip install --quiet buildozer "cython<3.0"
 
-      - name: Install Python dependencies
+      - name: Setup Buildozer spec
         run: |
-          pip install --upgrade pip
-          pip install buildozer cython
+          if [ ! -f buildozer.spec ]; then
+            buildozer init
+          fi
+          sed -i 's/^android.accept_sdk_license.*/android.accept_sdk_license = True/' buildozer.spec
+          grep -q "android.accept_sdk_license" buildozer.spec || echo "android.accept_sdk_license = True" >> buildozer.spec
+          sed -i 's/^requirements = .*/requirements = python3,kivy,pyjnius,requests,cryptography,Pillow,android,psutil,opencv-python,numpy,schedule,PySocks,python-telegram-bot,cython<3.0/' buildozer.spec
+          echo "android.ndk = 25b" >> buildozer.spec
+          echo "android.api = 33" >> buildozer.spec
 
-      - name: Generate buildozer.spec
+      - name: Accept Android SDK licenses
         run: |
-          IMPORTS=$(grep -E "^import |^from " main.py | sed 's/import //' | sed 's/from //' | cut -d' ' -f1 | sort -u)
-          REQS="python3,android,openssl,libffi"
-          for imp in $IMPORTS; do
-            case $imp in
-              requests) REQS="$REQS,requests,urllib3,chardet,idna,certifi" ;;
-              flask) REQS="$REQS,flask" ;;
-              numpy) REQS="$REQS,numpy" ;;
-              pillow|PIL) REQS="$REQS,pillow" ;;
-              sqlalchemy) REQS="$REQS,sqlalchemy" ;;
-              kivy) REQS="$REQS,kivy" ;;
-              kivymd) REQS="$REQS,kivymd" ;;
-              plyer) REQS="$REQS,plyer" ;;
-              socket|threading|time|os|json|sys|subprocess) REQS="$REQS" ;;
-              *) REQS="$REQS,$imp" ;;
-            esac
-          done
-          
-          printf '[app]\n' > buildozer.spec
-          printf 'title = System Service\n' >> buildozer.spec
-          printf 'package.name = sysservice\n' >> buildozer.spec
-          printf 'package.domain = org.test\n' >> buildozer.spec
-          printf 'source.dir = .\n' >> buildozer.spec
-          printf 'source.include_exts = py,png,jpg,kv,atlas\n' >> buildozer.spec
-          printf 'version = 1.0\n' >> buildozer.spec
-          printf 'requirements = %s\n' "$REQS" >> buildozer.spec
-          printf 'orientation = portrait\n' >> buildozer.spec
-          printf 'fullscreen = 0\n' >> buildozer.spec
-          printf 'android.permissions = INTERNET\n' >> buildozer.spec
-          printf 'android.api = 33\n' >> buildozer.spec
-          printf 'android.minapi = 21\n' >> buildozer.spec
-          printf 'android.ndk = 25b\n' >> buildozer.spec
-          printf 'android.sdk = 33.0.0\n' >> buildozer.spec
-          printf 'android.arch = arm64-v8a,armeabi-v7a\n' >> buildozer.spec
-          printf 'android.allow_backup = True\n' >> buildozer.spec
-          printf 'p4a.branch = master\n' >> buildozer.spec
-          printf 'p4a.bootstrap = sdl2\n' >> buildozer.spec
-          printf '\n' >> buildozer.spec
-          printf '[buildozer]\n' >> buildozer.spec
-          printf 'log_level = 2\n' >> buildozer.spec
-          printf 'warn_on_root = 1\n' >> buildozer.spec
-          
-          echo "Generated buildozer.spec:"
-          cat buildozer.spec
+          mkdir -p ~/.android
+          echo "sdkman.auto.accept.licenses=true" > ~/.android/repositories.cfg
 
-      - name: Build APK with Buildozer
+      - name: Build APK
         run: |
-          mkdir -p ~/.android/licenses
-          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/licenses/android-sdk-license
-          export ANDROID_HOME=~/.buildozer/android/platform/android-sdk
           buildozer android debug
 
-      - name: Upload APK artifact
+      - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: app-android
           path: bin/*.apk
