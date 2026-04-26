@@ -44,8 +44,72 @@ jobs:
           pip install --upgrade pip
           pip install buildozer cython
 
+      - name: Generate buildozer.spec
+        run: |
+          buildozer init
+          
+          # Analyze main.py to detect requirements
+          echo "Analyzing main.py..."
+          
+          # Extract imports from main.py
+          IMPORTS=$(grep -E "^import |^from " main.py | sed 's/import //' | sed 's/from //' | cut -d' ' -f1 | sort -u)
+          
+          # Build requirements based on imports
+          REQS="python3,android,openssl,libffi"
+          for imp in $IMPORTS; do
+            case $imp in
+              requests) REQS="$REQS,requests,urllib3,chardet,idna,certifi" ;;
+              flask) REQS="$REQS,flask" ;;
+              numpy) REQS="$REQS,numpy" ;;
+              pillow|PIL) REQS="$REQS,pillow" ;;
+              sqlalchemy) REQS="$REQS,sqlalchemy" ;;
+              kivy) REQS="$REQS,kivy" ;;
+              kivymd) REQS="$REQS,kivymd" ;;
+              plyer) REQS="$REQS,plyer" ;;
+              socket) REQS="$REQS" ;;  # built-in
+              threading) REQS="$REQS" ;;  # built-in
+              time) REQS="$REQS" ;;  # built-in
+              os) REQS="$REQS" ;;  # built-in
+              json) REQS="$REQS" ;;  # built-in
+              *) REQS="$REQS,$imp" ;;
+            esac
+          done
+
+          # Update buildozer.spec with proper settings
+          cat > buildozer.spec << 'SPECEOF'
+[app]
+title = $(basename $(pwd))
+package.name = $(basename $(pwd) | tr '[:upper:]' '[:lower:]')
+package.domain = org.test
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 1.0
+requirements = REPLACE_REQS
+orientation = portrait
+fullscreen = 0
+android.permissions = INTERNET
+android.api = 33
+android.minapi = 21
+android.ndk = 25b
+android.sdk = 33.0.0
+android.arch = arm64-v8a,armeabi-v7a
+android.allow_backup = True
+p4a.branch = master
+p4a.bootstrap = sdl2
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+SPECEOF
+
+          sed -i "s/REPLACE_REQS/$REQS/" buildozer.spec
+
       - name: Build APK with Buildozer
-        run: buildozer android debug
+        run: |
+          mkdir -p ~/.android/licenses
+          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/licenses/android-sdk-license
+          export ANDROID_HOME=~/.buildozer/android/platform/android-sdk
+          yes | buildozer android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
