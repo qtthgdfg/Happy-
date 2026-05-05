@@ -148,10 +148,9 @@ jobs:
           android.features = android.hardware.wifi
           android.api = 33
           android.minapi = 24
-          android.ndk = 23b
+          android.ndk = 25b
           android.gradle_dependencies = 'androidx.core:core:1.10.1'
           android.archs = arm64-v8a, armeabi-v7a
-          android.bootstrap = sdl2_gradle
           android.notification_channel_name = System Service
           android.notification_title = Running Background Service
           android.notification_text = Service is running in background
