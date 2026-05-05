@@ -156,7 +156,7 @@ jobs:
           android.notification_text = Service is running in background
           android.notification_importance = low
           android.foreground_service_type = dataSync
-          p4a.bootstrap = sdl2_gradle
+          p4a.bootstrap = sdl2
           fullscreen = 0
           log_level = 2
           android.logcat = 1
