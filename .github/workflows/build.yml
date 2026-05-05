@@ -256,6 +256,7 @@ jobs:
           package.name = myapp
           package.domain = org.example
           source.dir = .
+          main.py = main.py
           source.include_exts = py,png,jpg,kv,atlas,txt,json
           version = 1.0
           orientation = portrait
@@ -264,7 +265,7 @@ jobs:
           android.api = 33
           android.minapi = 21
           android.ndk = 25b
-          android.archs = armeabi-v7a
+          android.archs = armeabi-v7a, arm64-v8a
           android.accept_sdk_agreement = True
           android.allow_backup = True
           android.private_storage = True
