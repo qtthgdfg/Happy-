@@ -95,7 +95,7 @@ android.gradle_dependencies = 'androidx.core:core:1.10.1'
 # android.add_libs_x86_64 = 
 
 # (str) The Android arch to build for
-android.archs = arm64-v8a, armeabi_v8a
+android.archs = arm64-v8a, armeabi-v7a
 
 # (int) overrides automatic versionCode computation (used in build.gradle)
 # android.numeric_version = 1
@@ -136,7 +136,7 @@ android.foreground_service_type = dataSync
 
 # (str) Service bootstrap - use 'service_library' for PythonService
 # This MUST be set for services to work properly
-p4a.bootstrap = sdl2_gradle
+p4a.bootstrap = sdl2
 
 # ----------------------------------------------------------
 # Build configuration
