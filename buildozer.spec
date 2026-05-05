@@ -74,7 +74,7 @@ android.features = android.hardware.wifi
 android.api = 33
 
 # (str) Minimum Android SDK version
-android.minapi = 24
+android.minapi = 21
 
 # (int) Target NDK version
 android.ndk = 25b
