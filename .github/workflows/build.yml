@@ -85,7 +85,7 @@ jobs:
           mkdir -p licenses
           echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > licenses/android-sdk-license
           
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.0" \
@@ -107,13 +107,23 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v11-${{ hashFiles('.github/workflows/main.yml') }}
+          key: ${{ runner.os }}-buildozer-v12-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v11-
+            ${{ runner.os }}-buildozer-v12-
       
-      - name: Create buildozer.spec
+      - name: Verify required files exist
         run: |
-          cat > buildozer.spec << 'SPECEOF'
+          echo "=== Checking required files ==="
+          if [ -f "main.py" ]; then echo "✅ main.py found"; else echo "❌ main.py MISSING"; exit 1; fi
+          if [ -f "service.py" ]; then echo "✅ service.py found"; else echo "❌ service.py MISSING"; exit 1; fi
+          echo "=== Files in repository ==="
+          ls -la *.py buildozer.spec 2>/dev/null || true
+      
+      - name: Create buildozer.spec if not present
+        run: |
+          if [ ! -f "buildozer.spec" ]; then
+            echo "Creating buildozer.spec..."
+            cat > buildozer.spec << 'SPECEOF'
           [app]
 
           title = System Service
@@ -155,8 +165,12 @@ jobs:
 
           [buildozer]
           SPECEOF
+            echo "buildozer.spec created"
+          else
+            echo "buildozer.spec already exists"
+          fi
           
-          echo "buildozer.spec created:"
+          echo "=== buildozer.spec contents ==="
           cat buildozer.spec
       
       - name: Build APK
@@ -164,6 +178,8 @@ jobs:
         run: |
           echo "Starting build on $(lsb_release -ds)..."
           echo "Python version: $(python3 --version)"
+          echo "Java version: $(java -version 2>&1 | head -1)"
+          echo "Buildozer version: $(buildozer version 2>/dev/null || echo 'unknown')"
           
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
@@ -185,26 +201,49 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
+          # Run buildozer with timeout protection
+          echo "=== Starting buildozer ==="
           buildozer android debug 2>&1 | tee full_build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
           echo ""
           echo "Build exit code: $BUILD_EXIT"
           
-          # Find APK
-          find /home/runner -name "*.apk" -type f 2>/dev/null | head -10
+          # Create output directory
+          mkdir -p bin
           
-          if ls bin/*.apk 1> /dev/null 2>&1; then
+          # Find and copy APK from anywhere on the system
+          APK_FOUND=false
+          echo "=== Searching for APK files ==="
+          for apk in $(find /home/runner -name "*.apk" -type f 2>/dev/null); do
+            echo "Found: $apk ($(du -h "$apk" | cut -f1))"
+            cp "$apk" bin/
+            APK_FOUND=true
+          done
+          
+          # Also check buildozer default location
+          if ls ~/.buildozer/android/platform/build-*/dists/*/bin/*.apk 2>/dev/null | head -1; then
+            for apk in $(ls ~/.buildozer/android/platform/build-*/dists/*/bin/*.apk 2>/dev/null); do
+              echo "Found buildozer APK: $apk ($(du -h "$apk" | cut -f1))"
+              cp "$apk" bin/
+              APK_FOUND=true
+            done
+          fi
+          
+          if [ "$APK_FOUND" = true ]; then
             echo ""
             echo "✅ APK FOUND!"
             ls -lh bin/*.apk
             echo "apk_created=true" >> $GITHUB_OUTPUT
           else
             echo ""
-            echo "❌ No APK in bin/"
+            echo "❌ No APK found anywhere"
+            echo ""
+            echo "=== Build log tail ==="
+            tail -100 full_build.log
             echo ""
             echo "=== Critical errors ==="
-            grep -i "error\|failed\|python3 should have same version" full_build.log | grep -v "WARNING\|DEPRECATED\|prerequisites\|stty\|checking\|Cythonize" | tail -10
+            grep -i "error\|failed" full_build.log | grep -v "WARNING\|DEPRECATED\|prerequisites\|stty\|checking\|Cythonize\|PythonActivity\|notification" | tail -20
             echo "apk_created=false" >> $GITHUB_OUTPUT
           fi
       
@@ -213,7 +252,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Android-APK-${{ github.run_number }}
-          path: bin/*.apk
+          path: |
+            bin/*.apk
           retention-days: 30
       
       - name: Upload build log (ALWAYS)
@@ -221,7 +261,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ github.run_number }}
-          path: full_build.log
+          path: |
+            full_build.log
           retention-days: 7
       
       - name: Build Summary
@@ -230,17 +271,24 @@ jobs:
           echo "============================================"
           echo "BUILD SUMMARY"
           echo "============================================"
-          echo "Status: ${{ job.status }}"
-          if ls bin/*.apk 1> /dev/null 2>&1; then
-            echo ""
+          echo "Job Status: ${{ job.status }}"
+          echo ""
+          if [ -f "bin/"*.apk ] 2>/dev/null; then
             echo "✅ APK SUCCESSFULLY CREATED!"
-            ls -lh bin/*.apk
+            ls -lh bin/*.apk 2>/dev/null
             echo ""
-            echo "📥 Download: Android-APK-${{ github.run_number }}"
+            echo "📥 Download artifact: Android-APK-${{ github.run_number }}"
           else
-            echo ""
             echo "❌ NO APK CREATED"
             echo ""
-            echo "📥 Download: build-log-${{ github.run_number }}"
+            echo "📥 Download artifact: build-log-${{ github.run_number }}"
+            echo "   to inspect build errors"
+            echo ""
+            echo "Quick fixes to try:"
+            echo "  1. Check main.py has Kivy App class"
+            echo "  2. Check service.py exists in repo root"
+            echo "  3. Check buildozer.spec has services = Service:service.py"
+            echo "  4. Verify requirements = python3,kivy==2.3.0,pyjnius,android,plyer"
+            echo "  5. Try clearing cache and re-running"
           fi
           echo "============================================"
