@@ -77,7 +77,7 @@ android.api = 33
 android.minapi = 24
 
 # (int) Target NDK version
-android.ndk = 23b
+android.ndk = 25b
 
 # (str) Gradle version
 android.gradle_dependencies = 'androidx.core:core:1.10.1'
@@ -95,13 +95,13 @@ android.gradle_dependencies = 'androidx.core:core:1.10.1'
 # android.add_libs_x86_64 = 
 
 # (str) The Android arch to build for
-android.arch = arm64-v8a
+android.archs = arm64-v8a, armeabi_v8a
 
 # (int) overrides automatic versionCode computation (used in build.gradle)
 # android.numeric_version = 1
 
 # (str) Bootstrap type (service_library, sdl2_gradle or webview)
-android.bootstrap = sdl2_gradle
+
 
 # (str) Android logcat filters to use
 # android.logcat_filters = *:S python:D
