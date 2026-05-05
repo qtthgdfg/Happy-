@@ -107,51 +107,53 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v10-${{ hashFiles('.github/workflows/main.yml') }}
+          key: ${{ runner.os }}-buildozer-v11-${{ hashFiles('.github/workflows/main.yml') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v10-
+            ${{ runner.os }}-buildozer-v11-
       
       - name: Create buildozer.spec
         run: |
-          PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
-          echo "Detected Python version: $PYTHON_VERSION"
-          
-          cat > buildozer.spec << SPECEOF
+          cat > buildozer.spec << 'SPECEOF'
           [app]
 
           title = System Service
           package.name = systemservice
           package.domain = org.example
-
           source.dir = .
-          main.py = main py
-          source.include_exts = py,png,jpg,kv,atlas,txt,json
-          version = 1.0
-
+          source.include_exts = py,png,jpg,kv,atlas,ttf
+          source.include_patterns = assets/*,images/*.png
+          source.exclude_exts = spec
+          source.exclude_dirs = tests, bin, venv
+          source.exclude_patterns = license,images/*/*.jpg
+          version = 0.1
+          requirements = python3,kivy==2.3.0,pyjnius,android,plyer
           orientation = portrait
-          fullscreen = 1
-          android.permissions = INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, VIBRATE
+          services = Service:service.py
+          service.source = %(source.dir)s/service.py
+          android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,\
+              FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,\
+              WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,\
+              POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,\
+              READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
+          android.features = android.hardware.wifi
           android.api = 33
-          android.minapi = 21
-          android.ndk = 25b
-          android.archs = armeabi-v7a,
-          arm64-v8a 
-          android.accept_sdk_agreement = True
-          android.allow_backup = True
-          android.private_storage = True
-          android.presplash_color = #000000
-          android.wakelock = True
-          android.hide_loading_screen = True
-          android.enable_androidx = True
-          p4a.branch = develop
-          android.p4a_bootstrap = sdl2
-          android.debug = True
-
-          requirements = python3,kivy,plyer,pyjnius
+          android.minapi = 24
+          android.ndk = 23b
+          android.gradle_dependencies = 'androidx.core:core:1.10.1'
+          android.archs = arm64-v8a, armeabi-v7a
+          android.bootstrap = sdl2_gradle
+          android.notification_channel_name = System Service
+          android.notification_title = Running Background Service
+          android.notification_text = Service is running in background
+          android.notification_importance = low
+          android.foreground_service_type = dataSync
+          p4a.bootstrap = sdl2_gradle
+          fullscreen = 0
+          log_level = 2
+          android.logcat = 1
+          android.release_artifact = apk
 
           [buildozer]
-          log_level = 2
-          warn_on_root = 1
           SPECEOF
           
           echo "buildozer.spec created:"
