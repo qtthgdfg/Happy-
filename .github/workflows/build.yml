@@ -107,9 +107,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v15-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          # 🔑 CHANGED: v17 to force rebuild with Python 3.10
+          key: ${{ runner.os }}-buildozer-v17-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v15-
+            ${{ runner.os }}-buildozer-v17-
       
       - name: Verify required files exist
         run: |
@@ -144,7 +145,8 @@ jobs:
           source.exclude_dirs = tests, bin, venv
           source.exclude_patterns = license,images/*/*.jpg
           version = 0.1
-          requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+          # 🔑 FIXED: Pin Python 3.10 to prevent 3.14 incompatibility
+          requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
@@ -172,6 +174,7 @@ jobs:
           android.release_artifact = apk
 
           [buildozer]
+          log_level = 2
           SPECEOF
           
           echo "buildozer.spec created:"
@@ -183,6 +186,9 @@ jobs:
           echo "Starting build on $(lsb_release -ds)..."
           echo "Python version: $(python3 --version)"
           echo "Java version: $(java -version 2>&1 | head -1)"
+          
+          # 🔑 ADDED: Force Python 3.10 for p4a (prevents 3.14)
+          export P4A_PYTHON_VERSION=3.10.12
           
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
@@ -204,9 +210,6 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # Set environment to avoid missing .c file errors
-          export CFLAGS="-Wno-implicit-function-declaration -Wno-error=implicit-function-declaration"
-          
           # Run buildozer
           echo "=== Starting buildozer ==="
           buildozer android debug 2>&1 | tee full_build.log
@@ -222,7 +225,6 @@ jobs:
           APK_FOUND=false
           echo "=== Searching for APK files ==="
           
-          # Check buildozer default output locations
           for search_dir in \
             ~/.buildozer/android/platform/build-*/dists/*/bin/ \
             ~/.buildozer/android/platform/build-*/dists/*/ \
@@ -259,7 +261,7 @@ jobs:
             echo "❌ No APK found"
             echo ""
             echo "=== Critical errors from build ==="
-            grep -i "error:" full_build.log | grep -v "WARNING\|DEPRECATED\|stty\|checking\|Cythonize\|autoreconf\|warning:" | tail -20
+            grep -i "error:" full_build.log | grep -v "WARNING\|DEPRECATED\|stty\|checking\|Cythonize\|autoreconf\|warning:\|config.pxi\|Could not find\|No matching distribution" | tail -20
             echo "apk_created=false" >> $GITHUB_OUTPUT
           fi
       
@@ -289,7 +291,7 @@ jobs:
           echo "============================================"
           echo "Job Status: ${{ job.status }}"
           echo ""
-          if [ -f "bin/"*.apk ] 2>/dev/null; then
+          if ls bin/*.apk 2>/dev/null 1>&2; then
             echo "✅ APK SUCCESSFULLY CREATED!"
             ls -lh bin/*.apk 2>/dev/null
             echo ""
@@ -299,8 +301,5 @@ jobs:
             echo ""
             echo "📥 Download artifact: build-log-${{ github.run_number }}"
             echo "   to inspect build errors"
-            echo ""
-            echo "Using p4a develop branch with NDK 25b"
-            echo "If build still fails, check the build log for specific errors"
           fi
           echo "============================================"
