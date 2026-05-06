@@ -24,7 +24,7 @@ jobs:
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.10.12'  # 🔑 FIXED: Pin exact version
       
       - name: Install system dependencies
         run: |
@@ -59,9 +59,17 @@ jobs:
       
       - name: Install Python packages
         run: |
-          pip install --upgrade pip setuptools wheel
-          pip install "cython<3.0"
-          pip install buildozer virtualenv
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install "cython<3.0,>=0.29.33"  # 🔑 FIXED: Pinned compatible version
+          python3 -m pip install buildozer==1.5.0 virtualenv  # 🔑 FIXED: Specific buildozer version
+      
+      - name: Verify Python version
+        run: |
+          echo "System Python: $(python3 --version)"
+          echo "Python path: $(which python3)"
+          echo "Python3.10 path: $(which python3.10 || echo 'not found')"
+          # Ensure we're using Python 3.10
+          python3 -c "import sys; assert sys.version_info[:2] == (3, 10), f'Wrong Python version: {sys.version}'" || exit 1
       
       - name: Setup Android SDK
         run: |
@@ -107,10 +115,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          # 🔑 CHANGED: v17 to force rebuild with Python 3.10
-          key: ${{ runner.os }}-buildozer-v17-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          # 🔑 CHANGED: v18 to force rebuild with Python 3.10.12
+          key: ${{ runner.os }}-buildozer-v18-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v17-
+            ${{ runner.os }}-buildozer-v18-
       
       - name: Verify required files exist
         run: |
@@ -145,8 +153,10 @@ jobs:
           source.exclude_dirs = tests, bin, venv
           source.exclude_patterns = license,images/*/*.jpg
           version = 0.1
-          # 🔑 FIXED: Pin Python 3.10 to prevent 3.14 incompatibility
-          requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
+          # 🔑 FIXED: Use comma-separated (no == version pin in requirements)
+          requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+          # 🔑 ADDED: Explicit Python version for p4a
+          p4a.python_version = 3.10.12
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
@@ -195,8 +205,21 @@ jobs:
           echo "Python version: $(python3 --version)"
           echo "Java version: $(java -version 2>&1 | head -1)"
           
-          # 🔑 ADDED: Force Python 3.10 for p4a (prevents 3.14)
+          # 🔑 CRITICAL FIX: Force Python 3.10 for p4a
           export P4A_PYTHON_VERSION=3.10.12
+          export PYTHON_VERSION=3.10.12
+          
+          # 🔑 CRITICAL FIX: Create symlinks to force use of Python 3.10
+          mkdir -p ~/local/bin
+          ln -sf $(which python3) ~/local/bin/python
+          ln -sf $(which python3) ~/local/bin/python3
+          export PATH="$HOME/local/bin:$PATH"
+          
+          # Verify correct Python before build
+          echo "=== Python verification ==="
+          python --version
+          python3 --version
+          python -c "import sys; print(f'Python: {sys.version}')"
           
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
@@ -218,9 +241,9 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # Run buildozer
+          # Run buildozer with explicit Python
           echo "=== Starting buildozer ==="
-          buildozer android debug 2>&1 | tee full_build.log
+          python3 -m buildozer android debug 2>&1 | tee full_build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
           echo ""
