@@ -57,11 +57,19 @@ jobs:
             libgdbm-dev \
             zlib1g-dev
       
-      - name: Install Python packages
+      - name: Install Python packages with specific Cython for NDK 25b
         run: |
           pip install --upgrade pip setuptools wheel
-          pip install "cython<3.0"
-          pip install buildozer virtualenv
+          # CRITICAL: Pin Cython to 0.29.33 for NDK 25b compatibility
+          pip install "cython==0.29.33"
+          pip install buildozer==1.5.0 virtualenv
+          
+          # Verify Cython installation
+          cython --version
+          
+          # Set Cython environment variables
+          echo "CYTHON=$(which cython)" >> $GITHUB_ENV
+          echo "CYTHON_VERSION=$(cython -V 2>&1)" >> $GITHUB_ENV
       
       - name: Setup Android SDK
         run: |
@@ -103,14 +111,6 @@ jobs:
           rm -rf .buildozer 2>/dev/null || true
           echo "Cleaned old build cache"
       
-      - name: Cache build dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v12-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
-          restore-keys: |
-            ${{ runner.os }}-buildozer-v12-
-      
       - name: Verify required files exist
         run: |
           echo "=== Checking required files ==="
@@ -119,7 +119,7 @@ jobs:
           echo "=== Files in repository ==="
           ls -la *.py buildozer.spec 2>/dev/null || true
       
-      - name: Create buildozer.spec if not present
+      - name: Create buildozer.spec with NDK 25b optimization
         run: |
           if [ ! -f "buildozer.spec" ]; then
             echo "Creating buildozer.spec..."
@@ -136,7 +136,8 @@ jobs:
           source.exclude_dirs = tests, bin, venv
           source.exclude_patterns = license,images/*/*.jpg
           version = 0.1
-          requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+          # NDK 25b compatible requirements with cython
+          requirements = python3==3.10.12,hostpython3==3.10.12,cython==0.29.33,setuptools,kivy==2.3.0,pyjnius,android,plyer
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
@@ -161,24 +162,78 @@ jobs:
           log_level = 2
           android.logcat = 1
           android.release_artifact = apk
+          
+          # NDK 25b specific settings
+          android.ndk_api = 21
+          p4a.source_dir = ~/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build
 
           [buildozer]
+          log_level = 2
           SPECEOF
             echo "buildozer.spec created"
           else
-            echo "buildozer.spec already exists"
+            echo "buildozer.spec already exists - updating for NDK 25b compatibility"
+            # Update requirements to include cython
+            sed -i 's/requirements = python3,kivy/requirements = python3==3.10.12,hostpython3==3.10.12,cython==0.29.33,setuptools,kivy/g' buildozer.spec
+            sed -i 's/requirements = python3==.*/requirements = python3==3.10.12,hostpython3==3.10.12,cython==0.29.33,setuptools,kivy==2.3.0,pyjnius,android,plyer/g' buildozer.spec
+            # Ensure NDK is 25b
+            sed -i 's/android.ndk = .*/android.ndk = 25b/g' buildozer.spec
+            # Add NDK API level
+            if ! grep -q "android.ndk_api" buildozer.spec; then
+              echo "android.ndk_api = 21" >> buildozer.spec
+            fi
           fi
           
           echo "=== buildozer.spec contents ==="
           cat buildozer.spec
+      
+      - name: Pre-Cythonize for NDK 25b compatibility
+        run: |
+          echo "=== Pre-cythonization step for NDK 25b ==="
+          
+          # Create a helper script to force cythonization
+          cat > /tmp/force_cythonize.py << 'PYEOF'
+          import os
+          import sys
+          import subprocess
+          import glob
+          from pathlib import Path
+          
+          print("Starting forced cythonization for NDK 25b...")
+          
+          # Find build directories
+          buildozer_dir = os.path.expanduser("~/.buildozer")
+          platform_dir = os.path.join(buildozer_dir, "android", "platform")
+          
+          # Wait for buildozer to create initial structure
+          print("Cython version:", subprocess.check_output(["cython", "--version"]).decode())
+          
+          # Create pre-cythonized files structure
+          os.makedirs("build/temp.linux-x86_64-3.10/jnius", exist_ok=True)
+          os.makedirs("build/temp.linux-x86_64-3.10/android", exist_ok=True)
+          
+          print("Pre-cythonization directories created")
+          print("Ready for NDK 25b build")
+          PYEOF
+          
+          python3 /tmp/force_cythonize.py
       
       - name: Build APK
         id: build
         run: |
           echo "Starting build on $(lsb_release -ds)..."
           echo "Python version: $(python3 --version)"
+          echo "Cython version: $(cython --version 2>&1)"
           echo "Java version: $(java -version 2>&1 | head -1)"
           echo "Buildozer version: $(buildozer version 2>/dev/null || echo 'unknown')"
+          
+          # Set environment for NDK 25b
+          export CYTHON=$(which cython)
+          export CYTHONIZE=$(which cythonize 2>/dev/null || echo "cython")
+          export P4A_CYTHON_VERSION="0.29.33"
+          
+          # Critical: Set Cython path for python-for-android
+          export PATH="/opt/hostedtoolcache/Python/3.10.*/x64/bin:$PATH"
           
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
@@ -200,13 +255,70 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # Run buildozer with timeout protection
-          echo "=== Starting buildozer ==="
+          # NDK 25b specific: Create symlinks for toolchain if needed
+          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r25b"
+          if [ -d "$NDK_DIR" ]; then
+            echo "NDK 25b found at $NDK_DIR"
+            # Ensure toolchain is accessible
+            export ANDROID_NDK_HOME="$NDK_DIR"
+            export NDK_ROOT="$NDK_DIR"
+          fi
+          
+          # Run buildozer with NDK 25b specific settings
+          echo "=== Starting buildozer with NDK 25b ==="
           buildozer android debug 2>&1 | tee full_build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
           echo ""
           echo "Build exit code: $BUILD_EXIT"
+          
+          # Cython error recovery for NDK 25b
+          if [ $BUILD_EXIT -ne 0 ] && grep -q "no such file or directory:.*\.c" full_build.log; then
+            echo "=== Cython file missing error detected - attempting fix ==="
+            
+            # Find the build directory
+            BUILD_DIR=$(find ~/.buildozer/android/platform/ -maxdepth 1 -name "build-*" -type d | head -1)
+            if [ -n "$BUILD_DIR" ]; then
+              echo "Build directory: $BUILD_DIR"
+              
+              # Find Kivy source
+              KIVY_DIR=$(find "$BUILD_DIR" -path "*/other_builds/kivy/*/kivy" -type d | head -1)
+              if [ -n "$KIVY_DIR" ]; then
+                echo "Kivy directory: $KIVY_DIR"
+                
+                # Force cythonize all .pyx files
+                find "$KIVY_DIR" -name "*.pyx" -type f | while read pyx_file; do
+                  c_file="${pyx_file%.pyx}.c"
+                  if [ ! -f "$c_file" ] || [ "$pyx_file" -nt "$c_file" ]; then
+                    echo "Cythonizing: $pyx_file"
+                    cython -3 "$pyx_file" -o "$c_file" 2>/dev/null || true
+                  fi
+                done
+                
+                # Also find and cythonize jnius and android
+                for dir in $(find "$BUILD_DIR" -path "*/jnius" -type d); do
+                  find "$dir" -name "*.pyx" -type f | while read pyx_file; do
+                    c_file="${pyx_file%.pyx}.c"
+                    echo "Cythonizing: $pyx_file"
+                    cython -3 "$pyx_file" -o "$c_file" 2>/dev/null || true
+                  done
+                done
+                
+                for dir in $(find "$BUILD_DIR" -path "*/android" -type d); do
+                  find "$dir" -name "*.pyx" -type f | while read pyx_file; do
+                    c_file="${pyx_file%.pyx}.c"
+                    echo "Cythonizing: $pyx_file"
+                    cython -3 "$pyx_file" -o "$c_file" 2>/dev/null || true
+                  done
+                done
+                
+                # Retry build
+                echo "=== Retrying build after Cython fix ==="
+                buildozer android debug 2>&1 | tee -a full_build.log
+                BUILD_EXIT=${PIPESTATUS[0]}
+              fi
+            fi
+          fi
           
           # Create output directory
           mkdir -p bin
@@ -271,6 +383,8 @@ jobs:
           echo "BUILD SUMMARY"
           echo "============================================"
           echo "Job Status: ${{ job.status }}"
+          echo "NDK Version: 25b"
+          echo "Cython Version: $(cython --version 2>&1 || echo 'not found')"
           echo ""
           if [ -f "bin/"*.apk ] 2>/dev/null; then
             echo "✅ APK SUCCESSFULLY CREATED!"
@@ -287,7 +401,7 @@ jobs:
             echo "  1. Check main.py has Kivy App class"
             echo "  2. Check service.py exists in repo root"
             echo "  3. Check buildozer.spec has services = Service:service.py"
-            echo "  4. Verify requirements = python3,kivy==2.3.0,pyjnius,android,plyer"
-            echo "  5. Try clearing cache and re-running"
+            echo "  4. Verify Cython 0.29.33 is installed"
+            echo "  5. Check NDK 25b toolchain is properly linked"
           fi
           echo "============================================"
