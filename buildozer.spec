@@ -13,7 +13,11 @@ package.domain = org.example
 
 # (str) Source code where the main.py live
 source.dir = .
-requirements = python3==3.10.12,hostpython3==3.10.12,cython==0.29.33,setuptools,kivy==2.3.0,pyjnius,android,plyer
+
+# (list) Application requirements
+# FIXED: Removed explicit hostpython3 and cython - let p4a manage these
+# FIXED: Removed python3==3.10.12 pin - causes conflicts
+requirements = python3,kivy==2.3.0,pyjnius,android,plyer
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,ttf
@@ -36,14 +40,6 @@ version = 0.1
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
 # version.filename = %(source.dir)s/main.py
-
-# (list) Application requirements
-# comma separated e.g. requirements = sqlite3,kiv
-
-
-# (str) Custom source folders for requirements
-# Sets custom source for any requirements with recipes
-# requirements.source.kivy = ../../kivy
 
 # (str) Presplash of the application
 #presplash.filename = %(source.dir)s/presplash.png
@@ -75,43 +71,16 @@ android.features = android.hardware.wifi
 android.api = 33
 
 # (str) Minimum Android SDK version
-android.minapi = 21
+android.minapi = 24
 
 # (int) Target NDK version
 android.ndk = 25b
 
-# (str) Gradle version
-android.gradle_dependencies = 'androidx.core:core:1.10.1'
-
-# (list) Java classes to add as activities
-# android.add_activities = 
-
-# (list) Java classes to add as services
-# android.add_services = 
-
-# (list) Android library projects to add
-# android.add_libs_armeabi_v7a = 
-# android.add_libs_arm64_v8a = 
-# android.add_libs_x86 = 
-# android.add_libs_x86_64 = 
-
-# (str) The Android arch to build for
+# (list) The Android arch to build for
 android.archs = arm64-v8a, armeabi-v7a
 
-# (int) overrides automatic versionCode computation (used in build.gradle)
-# android.numeric_version = 1
-
-# (str) Bootstrap type (service_library, sdl2_gradle or webview)
-
-
-# (str) Android logcat filters to use
-# android.logcat_filters = *:S python:D
-
-# (bool) Copy library instead of making libpymodules.so
-# android.copy_libs = 1
-
-# (str) The Android app bundle architecture
-# android.app_bundle_arch = arm64-v8a, armeabi-v7a
+# (str) Gradle version
+android.gradle_dependencies = 'androidx.core:core:1.10.1'
 
 # ----------------------------------------------------------
 # Android SERVICE configuration
@@ -126,18 +95,17 @@ android.notification_title = Running Background Service
 # (str) Foreground service notification text
 android.notification_text = Service is running in background
 
-# (str) Foreground service notification icon
-# android.notification_icon = 
-
 # (str) Foreground service notification importance (min, low, default, high, max)
 android.notification_importance = low
 
 # (str) Foreground service type
 android.foreground_service_type = dataSync
 
-# (str) Service bootstrap - use 'service_library' for PythonService
-# This MUST be set for services to work properly
-p4a.bootstrap = sdl2
+# ----------------------------------------------------------
+# FIXED: CRITICAL - p4a branch for NDK 25b support
+# ----------------------------------------------------------
+p4a.branch = develop
+android.p4a_bootstrap = sdl2
 
 # ----------------------------------------------------------
 # Build configuration
@@ -145,9 +113,6 @@ p4a.bootstrap = sdl2
 
 # (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
-
-# (list) Permissions
-# android.permissions already defined above
 
 # ----------------------------------------------------------
 # Logging
@@ -158,18 +123,6 @@ log_level = 2
 
 # (bool) Enable logcat output
 android.logcat = 1
-
-# Advanced: specify which recipes to use
-# osx.kivy_version = 1.11.1
-
-# Extend buildozer hooks
-# p4a.hook = /path/to/hook.py
-
-# Extend source configurations for android
-# p4a.source_dir = /path/to/python-for-android
-
-# (bool) Skip Android SDK/NDK update check
-# android.skip_update = False
 
 # (bool) Create an archive (.apk) release
 android.release_artifact = apk
@@ -186,4 +139,5 @@ android.release_artifact = apk
 # (str) Key password
 # android.release.key_password = password
 
-# [buildozer]
+[buildozer]
+log_level = 2
