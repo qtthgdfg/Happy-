@@ -15,9 +15,9 @@ package.domain = org.example
 source.dir = .
 
 # (list) Application requirements
-# FIXED: Removed explicit hostpython3 and cython - let p4a manage these
-# FIXED: Removed python3==3.10.12 pin - causes conflicts
-requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+# 🔑 FIXED: Pin Python 3.10 to prevent p4a from using Python 3.14
+# Python 3.14 has breaking C API changes that kivy/pyjnius don't support
+requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,ttf
@@ -102,7 +102,7 @@ android.notification_importance = low
 android.foreground_service_type = dataSync
 
 # ----------------------------------------------------------
-# FIXED: CRITICAL - p4a branch for NDK 25b support
+# CRITICAL - p4a branch for NDK 25b support
 # ----------------------------------------------------------
 p4a.branch = develop
 android.p4a_bootstrap = sdl2
