@@ -24,7 +24,7 @@ jobs:
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10.12'  # 🔑 FIXED: Pin exact version
+          python-version: '3.10.12'
       
       - name: Install system dependencies
         run: |
@@ -60,15 +60,15 @@ jobs:
       - name: Install Python packages
         run: |
           python3 -m pip install --upgrade pip setuptools wheel
-          python3 -m pip install "cython<3.0,>=0.29.33"  # 🔑 FIXED: Pinned compatible version
-          python3 -m pip install buildozer==1.5.0 virtualenv  # 🔑 FIXED: Specific buildozer version
+          python3 -m pip install "cython<3.0,>=0.29.33"
+          python3 -m pip install buildozer==1.5.0 virtualenv
+          # 🔑 Install python-for-android explicitly so we can patch it
+          python3 -m pip install python-for-android
       
       - name: Verify Python version
         run: |
           echo "System Python: $(python3 --version)"
           echo "Python path: $(which python3)"
-          echo "Python3.10 path: $(which python3.10 || echo 'not found')"
-          # Ensure we're using Python 3.10
           python3 -c "import sys; assert sys.version_info[:2] == (3, 10), f'Wrong Python version: {sys.version}'" || exit 1
       
       - name: Setup Android SDK
@@ -115,10 +115,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          # 🔑 CHANGED: v18 to force rebuild with Python 3.10.12
-          key: ${{ runner.os }}-buildozer-v18-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v20-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v18-
+            ${{ runner.os }}-buildozer-v20-
       
       - name: Verify required files exist
         run: |
@@ -153,10 +152,8 @@ jobs:
           source.exclude_dirs = tests, bin, venv
           source.exclude_patterns = license,images/*/*.jpg
           version = 0.1
-          # 🔑 FIXED: Use comma-separated (no == version pin in requirements)
-          requirements = python3,kivy==2.3.0,pyjnius,android,plyer
-          # 🔑 ADDED: Explicit Python version for p4a
-          p4a.python_version = 3.10.12
+          # 🔑 Only use package names, no version pins for python3
+          requirements = python3,kivy,pyjnius,android,plyer
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
@@ -184,7 +181,13 @@ jobs:
           android.notification_text = Service is running in background
           android.notification_importance = low
           android.foreground_service_type = dataSync
+          
+          # 🔑 CRITICAL: develop branch needed for NDK 25b support
           p4a.branch = develop
+          
+          # 🔑 Set Python version (monkey-patch will enforce this)
+          p4a.python_version = 3.10.12
+          
           android.p4a_bootstrap = sdl2
           fullscreen = 0
           log_level = 2
@@ -195,8 +198,119 @@ jobs:
           log_level = 2
           SPECEOF
           
-          echo "buildozer.spec created:"
+          echo "✅ buildozer.spec created:"
           cat buildozer.spec
+      
+      # 🔑🔑🔑 MONKEY-PATCH: Force p4a to use Python 3.10 instead of Python 3.14 🔑🔑🔑
+      - name: Monkey-patch p4a to force Python 3.10 (NOT 3.14)
+        run: |
+          echo "============================================"
+          echo "🔧 MONKEY-PATCHING PYTHON-FOR-ANDROID"
+          echo "============================================"
+          
+          # Find the p4a installation directory
+          P4A_DIR=$(python3 -c "import os, pythonforandroid; print(os.path.dirname(pythonforandroid.__file__))")
+          echo "📁 p4a directory: $P4A_DIR"
+          
+          # Count files that reference 3.14 before patching
+          echo ""
+          echo "📊 BEFORE PATCHING:"
+          BEFORE_COUNT=$(grep -rl "3\.14" $P4A_DIR --include="*.py" 2>/dev/null | wc -l)
+          echo "   Files containing '3.14': $BEFORE_COUNT"
+          if [ "$BEFORE_COUNT" -gt 0 ]; then
+            echo "   Files:"
+            grep -rl "3\.14" $P4A_DIR --include="*.py" 2>/dev/null | head -10
+          fi
+          
+          echo ""
+          echo "🔨 PATCHING..."
+          
+          # Step 1: Replace specific version 3.14.2 → 3.10.12
+          echo "   → Replacing '3.14.2' with '3.10.12'..."
+          find $P4A_DIR -type f -name "*.py" -exec sed -i 's/3\.14\.2/3.10.12/g' {} +
+          
+          # Step 2: Replace general version 3.14 → 3.10
+          echo "   → Replacing '3.14' with '3.10'..."
+          find $P4A_DIR -type f -name "*.py" -exec sed -i 's/3\.14/3.10/g' {} +
+          
+          # Step 3: Also patch any .patch files or other text files
+          echo "   → Patching additional files..."
+          find $P4A_DIR -type f \( -name "*.patch" -o -name "*.txt" -o -name "*.cfg" -o -name "*.ini" \) -exec sed -i 's/3\.14\.2/3.10.12/g' {} + 2>/dev/null || true
+          find $P4A_DIR -type f \( -name "*.patch" -o -name "*.txt" -o -name "*.cfg" -o -name "*.ini" \) -exec sed -i 's/3\.14/3.10/g' {} + 2>/dev/null || true
+          
+          # Step 4: Patch toolchain.py to change default Python version
+          TOOLCHAIN_FILE="$P4A_DIR/toolchain.py"
+          if [ -f "$TOOLCHAIN_FILE" ]; then
+            echo "   → Patching toolchain.py defaults..."
+            sed -i "s/DEFAULT_PYTHON_VERSION = '3\.14'/DEFAULT_PYTHON_VERSION = '3.10'/g" $TOOLCHAIN_FILE
+            sed -i 's/DEFAULT_PYTHON_VERSION = "3\.14"/DEFAULT_PYTHON_VERSION = "3.10"/g' $TOOLCHAIN_FILE
+            sed -i "s/DEFAULT_PYTHON_VERSION = '3\.14\.2'/DEFAULT_PYTHON_VERSION = '3.10.12'/g" $TOOLCHAIN_FILE
+            sed -i 's/DEFAULT_PYTHON_VERSION = "3\.14\.2"/DEFAULT_PYTHON_VERSION = "3.10.12"/g' $TOOLCHAIN_FILE
+            echo "   ✅ toolchain.py patched"
+          fi
+          
+          # Step 5: Patch python3 recipe
+          PYTHON_RECIPE="$P4A_DIR/recipes/python3/__init__.py"
+          if [ -f "$PYTHON_RECIPE" ]; then
+            echo "   → Patching python3 recipe ($PYTHON_RECIPE)..."
+            sed -i 's/version = "3\.14\.2"/version = "3.10.12"/g' $PYTHON_RECIPE
+            sed -i "s/version = '3\.14\.2'/version = '3.10.12'/g" $PYTHON_RECIPE
+            sed -i 's|url = "https://www.python.org/ftp/python/3.14.2/Python-3.14.2.tgz"|url = "https://www.python.org/ftp/python/3.10.12/Python-3.10.12.tgz"|g' $PYTHON_RECIPE
+            echo "   ✅ python3 recipe patched"
+          fi
+          
+          # Step 6: Patch hostpython3 recipe
+          HOSTPYTHON_RECIPE="$P4A_DIR/recipes/hostpython3/__init__.py"
+          if [ -f "$HOSTPYTHON_RECIPE" ]; then
+            echo "   → Patching hostpython3 recipe ($HOSTPYTHON_RECIPE)..."
+            sed -i 's/version = "3\.14\.2"/version = "3.10.12"/g' $HOSTPYTHON_RECIPE
+            sed -i "s/version = '3\.14\.2'/version = '3.10.12'/g" $HOSTPYTHON_RECIPE
+            sed -i 's|url = "https://www.python.org/ftp/python/3.14.2/Python-3.14.2.tgz"|url = "https://www.python.org/ftp/python/3.10.12/Python-3.10.12.tgz"|g' $HOSTPYTHON_RECIPE
+            echo "   ✅ hostpython3 recipe patched"
+          fi
+          
+          # Step 7: Patch any bootstrap files
+          echo "   → Patching bootstrap files..."
+          find $P4A_DIR -type f -name "*.py" -path "*/bootstrap/*" -exec sed -i 's/3\.14\.2/3.10.12/g' {} + 2>/dev/null || true
+          find $P4A_DIR -type f -name "*.py" -path "*/bootstrap/*" -exec sed -i 's/3\.14/3.10/g' {} + 2>/dev/null || true
+          
+          echo ""
+          echo "📊 AFTER PATCHING:"
+          AFTER_COUNT=$(grep -rl "3\.14" $P4A_DIR --include="*.py" 2>/dev/null | wc -l)
+          echo "   Files containing '3.14': $AFTER_COUNT"
+          
+          if [ "$AFTER_COUNT" -gt 0 ]; then
+            echo "   ⚠️  Warning: $AFTER_COUNT files still contain 3.14 references:"
+            grep -rl "3\.14" $P4A_DIR --include="*.py" 2>/dev/null
+          else
+            echo "   ✅ All 3.14 references SUCCESSFULLY replaced with 3.10!"
+          fi
+          
+          # Verify patches were applied correctly
+          echo ""
+          echo "🔍 VERIFICATION:"
+          echo "   Checking for 3.10.12 references..."
+          python3 -c "
+          import os
+          p4a_dir = os.path.dirname(__import__('pythonforandroid').__file__)
+          count_310 = 0
+          for root, dirs, files in os.walk(p4a_dir):
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      try:
+                          with open(path) as fp:
+                              content = fp.read()
+                              if '3.10.12' in content:
+                                  count_310 += 1
+                      except:
+                          pass
+          print(f'   ✅ Found 3.10.12 references in {count_310} files')
+          " || echo "   ⚠️  Verification failed, but continuing..."
+          
+          echo ""
+          echo "✅ Monkey-patching COMPLETE!"
+          echo "============================================"
       
       - name: Build APK
         id: build
@@ -205,22 +319,27 @@ jobs:
           echo "Python version: $(python3 --version)"
           echo "Java version: $(java -version 2>&1 | head -1)"
           
-          # 🔑 CRITICAL FIX: Force Python 3.10 for p4a
+          # Force Python 3.10 environment variables
           export P4A_PYTHON_VERSION=3.10.12
           export PYTHON_VERSION=3.10.12
+          export HOSTPYTHON_VERSION=3.10.12
           
-          # 🔑 CRITICAL FIX: Create symlinks to force use of Python 3.10
-          mkdir -p ~/local/bin
-          ln -sf $(which python3) ~/local/bin/python
-          ln -sf $(which python3) ~/local/bin/python3
+          # Create wrapper to ensure we use the correct Python
+          mkdir -p $HOME/local/bin
+          cat > $HOME/local/bin/python3 << 'PYWRAP'
+          #!/bin/bash
+          exec /opt/hostedtoolcache/Python/3.10.12/x64/bin/python3 "$@"
+          PYWRAP
+          chmod +x $HOME/local/bin/python3
           export PATH="$HOME/local/bin:$PATH"
           
-          # Verify correct Python before build
-          echo "=== Python verification ==="
-          python --version
+          # Verify the correct Python is being used
+          echo "=== Python Verification ==="
+          which python3
           python3 --version
-          python -c "import sys; print(f'Python: {sys.version}')"
+          python3 -c "import sys; print(f'Python {sys.version}')"
           
+          # Build tools setup
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
           export AUTOMAKE=/usr/bin/automake
@@ -241,9 +360,9 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # Run buildozer with explicit Python
+          # Run buildozer
           echo "=== Starting buildozer ==="
-          python3 -m buildozer android debug 2>&1 | tee full_build.log
+          buildozer android debug 2>&1 | tee full_build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
           echo ""
@@ -273,7 +392,7 @@ jobs:
             fi
           done
           
-          # Deep search
+          # Deep search for APK
           if [ "$APK_FOUND" = false ]; then
             for apk in $(find /home/runner -name "*.apk" -type f 2>/dev/null); do
               echo "Found: $apk ($(du -h "$apk" | cut -f1))"
