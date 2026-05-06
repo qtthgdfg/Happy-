@@ -13,6 +13,7 @@ package.domain = org.example
 
 # (str) Source code where the main.py live
 source.dir = .
+requirements = python3==3.10.12,hostpython3==3.10.12,cython==0.29.33,setuptools,kivy==2.3.0,pyjnius,android,plyer
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,ttf
@@ -37,8 +38,8 @@ version = 0.1
 # version.filename = %(source.dir)s/main.py
 
 # (list) Application requirements
-# comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+# comma separated e.g. requirements = sqlite3,kiv
+
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
