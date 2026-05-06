@@ -71,13 +71,23 @@ android.features = android.hardware.wifi
 android.api = 33
 
 # (str) Minimum Android SDK version
-android.minapi = 24
+android.minapi = 21
 
 # (int) Target NDK version
 android.ndk = 25b
 
 # (list) The Android arch to build for
 android.archs = arm64-v8a, armeabi-v7a
+
+android.accept_sdk_agreement = True
+android.allow_backup = True
+android.private_storage = True
+android.presplash_color = #000000
+android.wakelock = True
+android.hide_loading_screen = True
+android.enable_androidx = True
+          
+android.debug = True
 
 # (str) Gradle version
 android.gradle_dependencies = 'androidx.core:core:1.10.1'
