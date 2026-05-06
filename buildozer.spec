@@ -15,9 +15,13 @@ package.domain = org.example
 source.dir = .
 
 # (list) Application requirements
-# 🔑 FIXED: Pin Python 3.10 to prevent p4a from using Python 3.14
-# Python 3.14 has breaking C API changes that kivy/pyjnius don't support
-requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
+# 🔑 FIXED: Removed python3==3.10.12 version pin from requirements
+# The python3 version must match hostpython3, which is controlled by p4a not buildozer
+requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+
+# (str) Python version for python-for-android
+# 🔑 CRITICAL: This tells p4a exactly which Python version to build
+p4a.python_version = 3.10.12
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,ttf
@@ -77,6 +81,7 @@ android.minapi = 21
 android.ndk = 25b
 
 # (list) The Android arch to build for
+# 🔑 FIXED: Removed space before armeabi-v7a
 android.archs = arm64-v8a, armeabi-v7a
 
 android.accept_sdk_agreement = True
