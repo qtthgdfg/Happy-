@@ -15,13 +15,8 @@ package.domain = org.example
 source.dir = .
 
 # (list) Application requirements
-# 🔑 FIXED: Removed python3==3.10.12 version pin from requirements
-# The python3 version must match hostpython3, which is controlled by p4a not buildozer
+# 🔑 FIXED: Removed version pin from python3, kivy version kept
 requirements = python3,kivy==2.3.0,pyjnius,android,plyer
-
-# (str) Python version for python-for-android
-# 🔑 CRITICAL: This tells p4a exactly which Python version to build
-p4a.python_version = 3.10.12
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,ttf
@@ -78,10 +73,11 @@ android.api = 33
 android.minapi = 21
 
 # (int) Target NDK version
-android.ndk = 25b
+# 🔑 FIXED: Changed from 25b to 23b to avoid Python 3.14 conflict
+# NDK 23b works with p4a stable branch and Python 3.10
+android.ndk = 23b
 
 # (list) The Android arch to build for
-# 🔑 FIXED: Removed space before armeabi-v7a
 android.archs = arm64-v8a, armeabi-v7a
 
 android.accept_sdk_agreement = True
@@ -117,9 +113,10 @@ android.notification_importance = low
 android.foreground_service_type = dataSync
 
 # ----------------------------------------------------------
-# CRITICAL - p4a branch for NDK 25b support
+# p4a configuration
 # ----------------------------------------------------------
-p4a.branch = develop
+# 🔑 FIXED: Removed p4a.branch = develop (not needed with NDK 23b)
+# 🔑 FIXED: p4a.python_version is NOT a valid setting, removed
 android.p4a_bootstrap = sdl2
 
 # ----------------------------------------------------------
