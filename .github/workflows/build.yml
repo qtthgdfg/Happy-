@@ -78,28 +78,96 @@ jobs:
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
       
-      # 🔑 Setup NDK 23b - works with Python 3.10 for BOTH architectures
-      - name: Setup NDK 23b
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: "23.2.8568313"
-          add-to-path: false
+      # 🔑 NDK FALLBACK: Try multiple NDK 23 versions in order
+      # Google's NDK archive: https://dl.google.com/android/repository/android-ndk-VERSION-linux.zip
+      - name: Download NDK 23 with fallback
+        id: ndk
+        run: |
+          NDK_BASE="$HOME/.buildozer/android/platform"
+          mkdir -p "$NDK_BASE"
+          
+          # Define NDK versions to try (in preference order)
+          # Format: "version_string:buildozer_name"
+          NDK_VERSIONS=(
+            "23.1.7779620:n23b"
+            "23.0.7599858:n23"
+            "23.2.8568313:n23c"
+          )
+          
+          DOWNLOADED=false
+          
+          for NDK_ENTRY in "${NDK_VERSIONS[@]}"; do
+            NDK_VER="${NDK_ENTRY%%:*}"
+            NDK_NAME="${NDK_ENTRY##*:}"
+            NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VER}-linux.zip"
+            NDK_ZIP="/tmp/android-ndk-${NDK_VER}.zip"
+            NDK_DIR="$NDK_BASE/android-ndk-${NDK_VER}"
+            
+            echo ""
+            echo "============================================"
+            echo "Trying NDK version: $NDK_VER ($NDK_NAME)"
+            echo "URL: $NDK_URL"
+            echo "============================================"
+            
+            # Try to download
+            HTTP_CODE=$(curl -sL -o "$NDK_ZIP" -w "%{http_code}" "$NDK_URL")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Download successful (HTTP $HTTP_CODE)"
+              echo "Extracting NDK $NDK_VER..."
+              unzip -q -o "$NDK_ZIP" -d "$NDK_BASE"
+              rm -f "$NDK_ZIP"
+              
+              # Verify extraction
+              if [ -d "$NDK_DIR" ] && [ -f "$NDK_DIR/ndk-build" ]; then
+                echo "✅ NDK $NDK_VER extracted successfully"
+                echo "ndk-version=$NDK_VER" >> $GITHUB_OUTPUT
+                echo "ndk-name=$NDK_NAME" >> $GITHUB_OUTPUT
+                echo "ndk-path=$NDK_DIR" >> $GITHUB_OUTPUT
+                echo "ndk-buildozer-name=android-ndk-r${NDK_NAME#n}" >> $GITHUB_OUTPUT
+                DOWNLOADED=true
+                break
+              else
+                echo "⚠️ Extraction incomplete, trying next..."
+              fi
+            else
+              echo "❌ Download failed (HTTP $HTTP_CODE)"
+              rm -f "$NDK_ZIP"
+            fi
+          done
+          
+          if [ "$DOWNLOADED" = false ]; then
+            echo ""
+            echo "============================================"
+            echo "❌ ALL NDK VERSIONS FAILED TO DOWNLOAD"
+            echo "============================================"
+            echo "Tried versions:"
+            for NDK_ENTRY in "${NDK_VERSIONS[@]}"; do
+              echo "  - ${NDK_ENTRY%%:*}"
+            done
+            exit 1
+          fi
+          
+          echo ""
+          echo "============================================"
+          echo "✅ SELECTED NDK: ${{ steps.ndk.outputs.ndk-version }}"
+          echo "   Path: ${{ steps.ndk.outputs.ndk-path }}"
+          echo "============================================"
       
       - name: Clean old buildozer cache
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
-          rm -rf ~/.buildozer/android/platform/android-ndk-* 2>/dev/null || true
+          # Don't remove the NDK we just downloaded!
           echo "Cleaned old build cache"
       
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-ndk23b-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-ndk23-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-ndk23b-
+            ${{ runner.os }}-buildozer-ndk23-
       
       - name: Verify required files exist
         run: |
@@ -125,20 +193,32 @@ jobs:
         run: |
           echo "============================================"
           echo "BUILDING Multi-Arch APK"
-          echo "NDK 23b + Python 3.10.12"
+          echo "NDK: ${{ steps.ndk.outputs.ndk-version }}"
+          echo "Python: 3.10.12"
           echo "Architectures: arm64-v8a, armeabi-v7a"
           echo "============================================"
           
-          # Link NDK 23b
-          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          # Link the downloaded NDK to where buildozer expects it
+          NDK_PATH="${{ steps.ndk.outputs.ndk-path }}"
           BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform"
+          BUILDOZER_NDK_NAME="${{ steps.ndk.outputs.ndk-buildozer-name }}"
+          
           mkdir -p "$BUILDOZER_NDK_DIR"
-          rm -f "$BUILDOZER_NDK_DIR/android-ndk-r23b" 2>/dev/null || true
-          ln -sf "$NDK_PATH" "$BUILDOZER_NDK_DIR/android-ndk-r23b"
-          echo "✅ Linked NDK 23b: $NDK_PATH → $BUILDOZER_NDK_DIR/android-ndk-r23b"
+          rm -f "$BUILDOZER_NDK_DIR/$BUILDOZER_NDK_NAME" 2>/dev/null || true
+          ln -sf "$NDK_PATH" "$BUILDOZER_NDK_DIR/$BUILDOZER_NDK_NAME"
+          echo "✅ Linked NDK: $NDK_PATH → $BUILDOZER_NDK_DIR/$BUILDOZER_NDK_NAME"
+          
+          # Determine the NDK name for buildozer.spec
+          # buildozer expects android-ndk-r23b, android-ndk-r23, etc.
+          NDK_SPEC_NAME="r${{ steps.ndk.outputs.ndk-name }}"
+          NDK_SPEC_NAME="${NDK_SPEC_NAME#rn}"  # remove double 'r' if present
+          NDK_SPEC_NAME="r${NDK_SPEC_NAME}"
+          # Handle: n23b → r23b, n23 → r23, n23c → r23c
+          NDK_SPEC_NAME="${NDK_SPEC_NAME//n/r}"
+          echo "NDK spec name: $NDK_SPEC_NAME"
           
           # Create buildozer.spec with BOTH architectures
-          cat > buildozer_multiarch.spec << 'SPECEOF'
+          cat > buildozer_multiarch.spec << SPECEOF
           [app]
           title = System Service
           package.name = systemservice
@@ -154,17 +234,13 @@ jobs:
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
-          android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,\
-              FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,\
-              WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,\
-              POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,\
-              READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
+          android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
           android.features = android.hardware.wifi
           android.api = 33
           android.minapi = 21
-          android.ndk = 23b
+          android.ndk = ${NDK_SPEC_NAME}
           android.archs = arm64-v8a, armeabi-v7a
-          android.gradle_dependencies = 'androidx.core:core:1.10.1'
+          android.gradle_dependencies = androidx.core:core:1.10.1
           android.accept_sdk_agreement = True
           android.allow_backup = True
           android.private_storage = True
@@ -187,6 +263,9 @@ jobs:
           [buildozer]
           log_level = 2
           SPECEOF
+          
+          echo "=== Generated buildozer.spec ==="
+          cat buildozer_multiarch.spec
           
           # Fix autoreconf for LT_SYS_SYMBOL_USCORE issue
           export AUTORECONF=/usr/bin/autoreconf
@@ -255,7 +334,7 @@ jobs:
           echo "Job Status: ${{ job.status }}"
           echo ""
           echo "Configuration:"
-          echo "  • NDK: 23b"
+          echo "  • NDK: ${{ steps.ndk.outputs.ndk-version }} (${{ steps.ndk.outputs.ndk-name }})"
           echo "  • Python: 3.10.12"
           echo "  • Architectures: arm64-v8a + armeabi-v7a"
           echo "  • Output: Single fat APK"
