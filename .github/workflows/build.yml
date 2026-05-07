@@ -118,7 +118,8 @@ jobs:
               if [ -n "$ACTUAL_NDK" ] && [ -f "$ACTUAL_NDK/ndk-build" ]; then
                 echo "✅ Found NDK at: $ACTUAL_NDK"
                 
-                FINAL_DIR="$NDK_BASE/android-ndk-${NDK_NAME}-real"
+                # Move to the EXACT name buildozer expects
+                FINAL_DIR="$NDK_BASE/android-ndk-r23b"
                 rm -rf "$FINAL_DIR"
                 mv "$ACTUAL_NDK" "$FINAL_DIR"
                 rm -rf "$TEMP_EXTRACT"
@@ -198,22 +199,27 @@ jobs:
           echo "✅ ndk-build found"
           "$NDK_REAL/ndk-build" --version 2>/dev/null || true
           
-          BUILDOZER_NDK_LINK="$HOME/.buildozer/android/platform/android-ndk-r23b"
-          rm -rf "$BUILDOZER_NDK_LINK"
-          ln -sf "$NDK_REAL" "$BUILDOZER_NDK_LINK"
+          # CRITICAL: Create a marker file so buildozer thinks NDK is already installed
+          # Buildozer checks for this exact directory name
+          BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r23b"
           
-          echo "✅ Symlink created: $BUILDOZER_NDK_LINK → $NDK_REAL"
+          # If the downloaded NDK is already at this location, we're good
+          # If not, create a symlink
+          if [ "$NDK_REAL" != "$BUILDOZER_NDK_DIR" ]; then
+            echo "Moving NDK to expected location..."
+            rm -rf "$BUILDOZER_NDK_DIR"
+            mv "$NDK_REAL" "$BUILDOZER_NDK_DIR"
+          fi
           
-          LINK_TARGET=$(readlink -f "$BUILDOZER_NDK_LINK" 2>/dev/null || readlink "$BUILDOZER_NDK_LINK")
-          echo "Symlink resolves to: $LINK_TARGET"
+          echo "✅ NDK at expected location: $BUILDOZER_NDK_DIR"
+          ls -la "$BUILDOZER_NDK_DIR/" | head -5
           
-          if [ ! -f "$BUILDOZER_NDK_LINK/ndk-build" ]; then
-            echo "❌ Cannot access ndk-build through symlink!"
-            ls -la "$BUILDOZER_NDK_LINK"
+          if [ ! -f "$BUILDOZER_NDK_DIR/ndk-build" ]; then
+            echo "❌ ndk-build not accessible!"
             exit 1
           fi
           
-          echo "✅ ndk-build accessible through symlink"
+          echo "✅ ndk-build accessible"
           
           cat > buildozer.spec << 'SPECEOF'
           [app]
@@ -235,10 +241,11 @@ jobs:
           android.features = android.hardware.wifi
           android.api = 33
           android.minapi = 21
-          android.ndk = r23b
+          android.ndk = 23b
           android.archs = arm64-v8a, armeabi-v7a
           android.gradle_dependencies = androidx.core:core:1.10.1
           android.accept_sdk_agreement = True
+          android.skip_update = True
           android.allow_backup = True
           android.private_storage = True
           android.presplash_color = #000000
