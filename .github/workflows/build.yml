@@ -78,36 +78,18 @@ jobs:
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
       
-      - name: Setup NDK 25b
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: "r25b"
-          add-to-path: false
-        continue-on-error: true
-      
-      - name: Download NDK 25b fallback
+      - name: Download NDK 25b
         id: ndk
         run: |
           NDK_BASE="$HOME/.buildozer/android/platform"
           mkdir -p "$NDK_BASE"
           
-          # Check if setup-ndk action succeeded
-          if [ -n "${{ steps.setup-ndk.outputs.ndk-path }}" ] && [ -d "${{ steps.setup-ndk.outputs.ndk-path }}" ]; then
-            echo "Using NDK from setup-ndk action: ${{ steps.setup-ndk.outputs.ndk-path }}"
-            FINAL_DIR="$NDK_BASE/android-ndk-r25b"
-            rm -rf "$FINAL_DIR"
-            cp -r "${{ steps.setup-ndk.outputs.ndk-path }}" "$FINAL_DIR"
-            echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
-            echo "ndk-name=r25b" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Fallback: download directly
           NDK_URLS=(
             "https://dl.google.com/android/repository/android-ndk-r25b-linux.zip"
             "https://dl.google.com/android/repository/android-ndk-r25c-linux.zip"
           )
+          
+          DOWNLOADED=false
           
           for NDK_URL in "${NDK_URLS[@]}"; do
             NDK_ZIP="/tmp/android-ndk.zip"
@@ -132,8 +114,8 @@ jobs:
                 rm -rf "$TEMP_EXTRACT"
                 
                 echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
-                echo "ndk-name=r25b" >> $GITHUB_OUTPUT
-                exit 0
+                DOWNLOADED=true
+                break
               fi
               rm -rf "$TEMP_EXTRACT"
             else
@@ -142,8 +124,12 @@ jobs:
             fi
           done
           
-          echo "❌ Could not download NDK 25b"
-          exit 1
+          if [ "$DOWNLOADED" = false ]; then
+            echo "❌ Could not download NDK 25b"
+            exit 1
+          fi
+          
+          echo "✅ NDK 25b ready"
       
       - name: Clean old buildozer cache
         run: |
@@ -155,9 +141,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v7-ndk25b-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v8-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v7-ndk25b-
+            ${{ runner.os }}-buildozer-v8-
       
       - name: Verify required files exist
         run: |
@@ -170,7 +156,7 @@ jobs:
         run: |
           echo "============================================"
           echo "BUILDING Multi-Arch APK"
-          echo "NDK 25b + Python 3.10.12"
+          echo "NDK 25b"
           echo "Architectures: arm64-v8a, armeabi-v7a"
           echo "============================================"
           
@@ -183,11 +169,11 @@ jobs:
           fi
           
           if [ ! -f "$BUILDOZER_NDK/ndk-build" ]; then
-            echo "❌ ndk-build not found at $BUILDOZER_NDK!"
+            echo "❌ ndk-build not found!"
             exit 1
           fi
           
-          echo "✅ NDK 25b ready"
+          echo "✅ NDK ready"
           
           unset ANDROID_NDK_ROOT ANDROID_NDK_HOME NDK_ROOT
           export ANDROID_NDK_HOME="$BUILDOZER_NDK"
@@ -204,7 +190,7 @@ jobs:
           source.exclude_dirs = tests, bin, venv
           source.exclude_patterns = license,images/*/*.jpg
           version = 0.1
-          requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
+          requirements = python3,kivy==2.3.0,pyjnius,android,plyer
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
@@ -229,8 +215,7 @@ jobs:
           android.notification_text = Service is running in background
           android.notification_importance = low
           android.foreground_service_type = dataSync
-          p4a.branch = master
-          p4a.commit = c9672b2a3cdb9a26f1af62cbef38e7e5f68a1744
+          p4a.branch = develop
           android.p4a_bootstrap = sdl2
           fullscreen = 0
           log_level = 2
@@ -242,8 +227,9 @@ jobs:
           
           echo "=== buildozer.spec created ==="
           echo ""
-          echo "Strategy: NDK 25b + pinned p4a commit that supports armeabi-v7a"
-          echo "The pinned commit pre-dates the NDK 25 minimum but works with it"
+          echo "Strategy: NDK 25b + p4a develop branch"
+          echo "Note: p4a develop may map arm64-v8a to Python 3.13+"
+          echo "Using 'python3' without version pin to let p4a choose"
           echo ""
           
           # Fix autoreconf
@@ -264,7 +250,6 @@ jobs:
           export PATH="/tmp:$PATH"
           
           echo "=== STARTING BUILD ==="
-          echo ""
           
           buildozer android debug 2>&1 | tee build_multiarch.log
           BUILD_EXIT=${PIPESTATUS[0]}
@@ -272,7 +257,6 @@ jobs:
           echo ""
           echo "Build exit code: $BUILD_EXIT"
           
-          # Collect APK
           mkdir -p bin
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
           find "$GITHUB_WORKSPACE" -maxdepth 5 -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
@@ -316,9 +300,8 @@ jobs:
           echo ""
           echo "Configuration:"
           echo "  • NDK: 25b"
-          echo "  • Python: 3.10.12"
+          echo "  • Python: (p4a default for develop branch)"
           echo "  • Architectures: arm64-v8a + armeabi-v7a"
-          echo "  • Output: Single fat APK"
           echo ""
           if ls bin/*.apk 2>/dev/null 1>&2; then
             echo "✅ APK CREATED!"
