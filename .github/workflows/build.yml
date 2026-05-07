@@ -83,52 +83,77 @@ jobs:
         run: |
           NDK_BASE="$HOME/.buildozer/android/platform"
           mkdir -p "$NDK_BASE"
+          FINAL_DIR="$NDK_BASE/android-ndk-r25b"
           
+          # If already exists, skip
+          if [ -f "$FINAL_DIR/ndk-build" ]; then
+            echo "NDK already exists at $FINAL_DIR"
+            echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Try multiple known-working URLs
           NDK_URLS=(
             "https://dl.google.com/android/repository/android-ndk-r25b-linux.zip"
             "https://dl.google.com/android/repository/android-ndk-r25c-linux.zip"
+            "https://dl.google.com/android/repository/android-ndk-r26b-linux.zip"
           )
           
           for NDK_URL in "${NDK_URLS[@]}"; do
+            echo "Trying: $NDK_URL"
             NDK_ZIP="/tmp/android-ndk.zip"
-            HTTP_CODE=$(curl -sL -o "$NDK_ZIP" -w "%{http_code}" "$NDK_URL")
+            rm -f "$NDK_ZIP"
+            
+            HTTP_CODE=$(curl -sL --connect-timeout 10 --max-time 60 -o "$NDK_ZIP" -w "%{http_code}" "$NDK_URL")
+            echo "HTTP response: $HTTP_CODE"
             
             if [ "$HTTP_CODE" = "200" ]; then
+              echo "Downloaded successfully"
               rm -rf /tmp/ndk-extract
               mkdir -p /tmp/ndk-extract
-              unzip -q -o "$NDK_ZIP" -d /tmp/ndk-extract
-              rm -f "$NDK_ZIP"
               
-              ACTUAL_NDK=$(find /tmp/ndk-extract -maxdepth 2 -name "ndk-build" -type f | head -1 | xargs dirname)
-              
-              if [ -n "$ACTUAL_NDK" ] && [ -f "$ACTUAL_NDK/ndk-build" ]; then
-                FINAL_DIR="$NDK_BASE/android-ndk-r25b"
-                rm -rf "$FINAL_DIR"
-                mv "$ACTUAL_NDK" "$FINAL_DIR"
-                rm -rf /tmp/ndk-extract
-                echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
-                echo "✅ NDK 25b ready"
-                exit 0
+              if unzip -q -o "$NDK_ZIP" -d /tmp/ndk-extract 2>/dev/null; then
+                ACTUAL_NDK=$(find /tmp/ndk-extract -maxdepth 2 -name "ndk-build" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+                
+                if [ -n "$ACTUAL_NDK" ] && [ -f "$ACTUAL_NDK/ndk-build" ]; then
+                  echo "Extracted NDK to: $ACTUAL_NDK"
+                  rm -rf "$FINAL_DIR"
+                  mv "$ACTUAL_NDK" "$FINAL_DIR"
+                  rm -rf /tmp/ndk-extract
+                  rm -f "$NDK_ZIP"
+                  
+                  echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
+                  echo "✅ NDK installed at $FINAL_DIR"
+                  exit 0
+                else
+                  echo "ndk-build not found in extracted files"
+                  ls -la /tmp/ndk-extract/ 2>/dev/null
+                fi
+              else
+                echo "Unzip failed"
               fi
               rm -rf /tmp/ndk-extract
             fi
             rm -f "$NDK_ZIP"
           done
-          echo "❌ Could not download NDK"
+          
+          echo "❌ All NDK download attempts failed"
+          echo "Tried: ${NDK_URLS[*]}"
           exit 1
       
       - name: Clean old buildozer cache
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
+          echo "Cleaned"
 
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-final-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v10-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-final-
+            ${{ runner.os }}-buildozer-v10-
 
       - name: Verify files exist
         run: |
@@ -138,14 +163,17 @@ jobs:
 
       - name: Build APK
         run: |
-          NDK_REAL="${{ steps.ndk.outputs.ndk-path }}"
-          BUILDOZER_NDK="$HOME/.buildozer/android/platform/android-ndk-r25b"
+          NDK_PATH="${{ steps.ndk.outputs.ndk-path }}"
           
-          rm -rf "$BUILDOZER_NDK"
-          mv "$NDK_REAL" "$BUILDOZER_NDK"
+          if [ ! -f "$NDK_PATH/ndk-build" ]; then
+            echo "❌ NDK not found at $NDK_PATH"
+            exit 1
+          fi
+          
+          echo "✅ NDK at $NDK_PATH"
           
           unset ANDROID_NDK_ROOT ANDROID_NDK_HOME NDK_ROOT
-          export ANDROID_NDK_HOME="$BUILDOZER_NDK"
+          export ANDROID_NDK_HOME="$NDK_PATH"
           
           cat > buildozer.spec << 'SPECEOF'
           [app]
@@ -212,33 +240,33 @@ jobs:
           buildozer android debug 2>&1 | tee build_multiarch.log
       
       - name: Collect APK
+        id: collect
         run: |
           echo "=== Searching for APK ==="
           mkdir -p apk-output
           
-          # Search everywhere
+          # Search entire runner filesystem
           find /home/runner -name "*.apk" -type f 2>/dev/null | while read f; do
             echo "Found: $f"
             cp "$f" apk-output/
           done
           
-          # Also check project bin
+          # Also check common locations
           cp bin/*.apk apk-output/ 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE/bin/"*.apk apk-output/ 2>/dev/null || true
           
-          # List what we found
           echo ""
           echo "=== APKs collected ==="
           ls -lh apk-output/ 2>/dev/null || echo "NONE"
           
-          # Set output for next step
           if ls apk-output/*.apk 2>/dev/null 1>&2; then
             echo "apk_found=true" >> $GITHUB_OUTPUT
           else
             echo "apk_found=false" >> $GITHUB_OUTPUT
-            echo "=== Last 30 lines of build log ==="
-            tail -30 build_multiarch.log
+            echo ""
+            echo "=== Last 40 lines of build log ==="
+            tail -40 build_multiarch.log
           fi
-        id: collect
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -264,8 +292,9 @@ jobs:
             echo "✅ APK ready:"
             ls -lh apk-output/*.apk
             echo ""
-            echo "📥 Download: MultiArch-APK-${{ github.run_number }}"
+            echo "📥 Download artifact: MultiArch-APK-${{ github.run_number }}"
           else
-            echo "❌ No APK found — check build-logs-${{ github.run_number }}"
+            echo "❌ No APK found"
+            echo "📥 Download build-logs-${{ github.run_number }} for details"
           fi
           echo "============================================"
