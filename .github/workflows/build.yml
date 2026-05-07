@@ -84,7 +84,6 @@ jobs:
           NDK_BASE="$HOME/.buildozer/android/platform"
           mkdir -p "$NDK_BASE"
           
-          # Try NDK 23 versions using Google's release name URL format
           NDK_VERSIONS=(
             "r23b"
             "r23c"
@@ -96,7 +95,6 @@ jobs:
           for NDK_NAME in "${NDK_VERSIONS[@]}"; do
             NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_NAME}-linux.zip"
             NDK_ZIP="/tmp/android-ndk-${NDK_NAME}.zip"
-            NDK_DIR="$NDK_BASE/android-ndk-${NDK_NAME}"
             
             echo ""
             echo "============================================"
@@ -108,24 +106,32 @@ jobs:
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Downloaded (HTTP $HTTP_CODE)"
               echo "Extracting..."
-              unzip -q -o "$NDK_ZIP" -d "$NDK_BASE"
+              
+              TEMP_EXTRACT="/tmp/ndk-extract-${NDK_NAME}"
+              rm -rf "$TEMP_EXTRACT"
+              mkdir -p "$TEMP_EXTRACT"
+              unzip -q -o "$NDK_ZIP" -d "$TEMP_EXTRACT"
               rm -f "$NDK_ZIP"
               
-              # Find the actual extracted NDK directory
-              if [ -d "$NDK_DIR" ] && [ -f "$NDK_DIR/ndk-build" ]; then
-                FINAL_DIR="$NDK_DIR"
-              else
-                FINAL_DIR=$(find "$NDK_BASE" -maxdepth 2 -name "ndk-build" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
-              fi
+              ACTUAL_NDK=$(find "$TEMP_EXTRACT" -maxdepth 2 -name "ndk-build" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
               
-              if [ -n "$FINAL_DIR" ] && [ -f "$FINAL_DIR/ndk-build" ]; then
-                echo "✅ NDK extracted: $FINAL_DIR"
+              if [ -n "$ACTUAL_NDK" ] && [ -f "$ACTUAL_NDK/ndk-build" ]; then
+                echo "✅ Found NDK at: $ACTUAL_NDK"
+                
+                FINAL_DIR="$NDK_BASE/android-ndk-${NDK_NAME}-real"
+                rm -rf "$FINAL_DIR"
+                mv "$ACTUAL_NDK" "$FINAL_DIR"
+                rm -rf "$TEMP_EXTRACT"
+                
+                echo "✅ NDK installed to: $FINAL_DIR"
                 echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
                 echo "ndk-name=${NDK_NAME}" >> $GITHUB_OUTPUT
                 DOWNLOADED=true
                 break
               else
-                echo "⚠️ Extraction issue, trying next..."
+                echo "⚠️ Could not find ndk-build in extracted content"
+                ls -la "$TEMP_EXTRACT/" 2>/dev/null || true
+                rm -rf "$TEMP_EXTRACT"
               fi
             else
               echo "❌ HTTP $HTTP_CODE"
@@ -139,7 +145,7 @@ jobs:
           fi
           
           echo ""
-          echo "✅ NDK ${{ steps.ndk.outputs.ndk-name }} ready"
+          echo "✅ NDK ${{ steps.ndk.outputs.ndk-name }} ready at: ${{ steps.ndk.outputs.ndk-path }}"
       
       - name: Clean old buildozer cache
         run: |
@@ -180,44 +186,35 @@ jobs:
           echo "BUILDING Multi-Arch APK"
           echo "============================================"
           
-          # Get the actual NDK directory and resolve to real path
-          NDK_PATH="${{ steps.ndk.outputs.ndk-path }}"
-          NDK_REAL=$(readlink -f "$NDK_PATH" 2>/dev/null || realpath "$NDK_PATH" 2>/dev/null || echo "$NDK_PATH")
+          NDK_REAL="${{ steps.ndk.outputs.ndk-path }}"
           
-          echo "NDK path: $NDK_PATH"
-          echo "NDK real: $NDK_REAL"
+          echo "NDK real path: $NDK_REAL"
           
-          # Verify ndk-build exists
           if [ ! -f "$NDK_REAL/ndk-build" ]; then
-            echo "Searching for ndk-build..."
-            NDK_REAL=$(find "$HOME/.buildozer/android/platform" -maxdepth 3 -name "ndk-build" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
-            if [ -z "$NDK_REAL" ] || [ ! -f "$NDK_REAL/ndk-build" ]; then
-              echo "❌ Cannot find ndk-build anywhere!"
-              echo "Contents of NDK platform directory:"
-              ls -la "$HOME/.buildozer/android/platform/"
-              exit 1
-            fi
-          fi
-          
-          echo "NDK directory: $NDK_REAL"
-          "$NDK_REAL/ndk-build" --version 2>/dev/null || true
-          
-          # Set up the NDK symlink for buildozer
-          BUILDOZER_NDK_LINK="$HOME/.buildozer/android/platform/android-ndk-r23b"
-          rm -rf "$BUILDOZER_NDK_LINK" 2>/dev/null || true
-          ln -sf "$NDK_REAL" "$BUILDOZER_NDK_LINK"
-          
-          echo "✅ NDK linked: $BUILDOZER_NDK_LINK → $NDK_REAL"
-          
-          # Verify the symlink works
-          if [ -f "$BUILDOZER_NDK_LINK/ndk-build" ]; then
-            echo "✅ ndk-build accessible"
-          else
-            echo "❌ Symlink broken!"
+            echo "❌ ndk-build not found at $NDK_REAL"
             exit 1
           fi
           
-          # Create buildozer.spec in working directory
+          echo "✅ ndk-build found"
+          "$NDK_REAL/ndk-build" --version 2>/dev/null || true
+          
+          BUILDOZER_NDK_LINK="$HOME/.buildozer/android/platform/android-ndk-r23b"
+          rm -rf "$BUILDOZER_NDK_LINK"
+          ln -sf "$NDK_REAL" "$BUILDOZER_NDK_LINK"
+          
+          echo "✅ Symlink created: $BUILDOZER_NDK_LINK → $NDK_REAL"
+          
+          LINK_TARGET=$(readlink -f "$BUILDOZER_NDK_LINK" 2>/dev/null || readlink "$BUILDOZER_NDK_LINK")
+          echo "Symlink resolves to: $LINK_TARGET"
+          
+          if [ ! -f "$BUILDOZER_NDK_LINK/ndk-build" ]; then
+            echo "❌ Cannot access ndk-build through symlink!"
+            ls -la "$BUILDOZER_NDK_LINK"
+            exit 1
+          fi
+          
+          echo "✅ ndk-build accessible through symlink"
+          
           cat > buildozer.spec << 'SPECEOF'
           [app]
           title = System Service
@@ -266,7 +263,6 @@ jobs:
           
           echo "=== buildozer.spec created ==="
           
-          # Fix autoreconf for LT_SYS_SYMBOL_USCORE issue
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
           export AUTOMAKE=/usr/bin/automake
@@ -286,7 +282,6 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # BUILD
           echo ""
           echo "=== STARTING BUILD ==="
           buildozer android debug 2>&1 | tee build_multiarch.log
@@ -295,7 +290,6 @@ jobs:
           echo ""
           echo "Build exit code: $BUILD_EXIT"
           
-          # Collect the APK
           mkdir -p bin
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
           
