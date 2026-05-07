@@ -128,26 +128,38 @@ jobs:
             exit 1
           fi
           
-          echo "✅ NDK ready: ${{ steps.ndk.outputs.ndk-name }}"
+          echo "✅ NDK ${{ steps.ndk.outputs.ndk-name }} ready"
       
       - name: Clean old buildozer cache
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
-          echo "Cleaned"
+          echo "Cleaned old build cache"
       
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v3-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v4-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v3-
+            ${{ runner.os }}-buildozer-v4-
       
       - name: Verify required files exist
         run: |
-          if [ -f "main.py" ]; then echo "✅ main.py found"; else echo "❌ main.py MISSING"; exit 1; fi
-          if [ -f "service.py" ]; then echo "✅ service.py found"; else echo "❌ service.py MISSING"; exit 1; fi
+          echo "=== Checking required files ==="
+          if [ -f "main.py" ]; then 
+            echo "✅ main.py found ($(wc -l < main.py) lines)"
+          else 
+            echo "❌ main.py MISSING"
+            exit 1
+          fi
+          if [ -f "service.py" ]; then 
+            echo "✅ service.py found ($(wc -l < service.py) lines)"
+          else 
+            echo "❌ service.py MISSING"
+            exit 1
+          fi
+          echo "=== Files in repository ==="
           ls -la
       
       - name: Build Multi-Arch APK
@@ -156,6 +168,7 @@ jobs:
           echo "============================================"
           echo "BUILDING Multi-Arch APK"
           echo "NDK 23b + Python 3.10.12"
+          echo "Architectures: arm64-v8a, armeabi-v7a"
           echo "============================================"
           
           NDK_REAL="${{ steps.ndk.outputs.ndk-path }}"
@@ -225,7 +238,7 @@ jobs:
           
           echo "=== buildozer.spec created ==="
           
-          # Fix autoreconf
+          # Fix autoreconf for LT_SYS_SYMBOL_USCORE issue
           export AUTORECONF=/usr/bin/autoreconf AUTOCONF=/usr/bin/autoconf
           export AUTOMAKE=/usr/bin/automake ACLOCAL=/usr/bin/aclocal LIBTOOLIZE=/usr/bin/libtoolize
           
@@ -233,6 +246,7 @@ jobs:
           #!/bin/bash
           for f in configure configure.ac; do
             if [ -f "$f" ] && grep -q "LT_SYS_SYMBOL_USCORE" "$f" 2>/dev/null; then
+              echo "[FIX] Patching $f..."
               sed -i 's/LT_SYS_SYMBOL_USCORE/AC_CHECK_FUNCS(rindex)/g' "$f"
             fi
           done
@@ -241,61 +255,156 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # ========================================
-          # CRITICAL FIX: Pre-patch p4a before buildozer runs it
-          # ========================================
-          # Buildozer will clone p4a master, which requires NDK 25+
-          # We intercept and patch the NDK minimum check BEFORE p4a runs
+          # ================================================================
+          # DUAL-LAYER PATCH: Fix p4a's NDK 25 minimum requirement
+          # Layer 1: sitecustomize.py (runtime import hook)
+          # Layer 2: Direct file patching (before buildozer runs)
+          # ================================================================
           
+          # Get site-packages path
+          SITE_PACKAGES=$(python3 -c "import site; print(site.getsitepackages()[0])")
+          
+          # Layer 1: Install sitecustomize.py that patches p4a at Python startup
+          cat > "$SITE_PACKAGES/sitecustomize.py" << 'PYEOF'
+          """
+          Auto-patches p4a to accept NDK 23 instead of requiring NDK 25.
+          Runs on every Python startup before any p4a imports.
+          """
+          import os
+          import re
+          import sys
+          
+          def patch_p4a_ndk_check():
+              """Find and patch p4a's toolchain.py to lower NDK minimum to 23."""
+              search_paths = [
+                  os.path.expanduser("~/.buildozer/android/platform/python-for-android"),
+              ]
+              # Also search from CWD
+              cwd = os.getcwd()
+              for root, dirs, files in os.walk(cwd):
+                  if "python-for-android" in dirs:
+                      search_paths.append(os.path.join(root, "python-for-android"))
+                      break
+              
+              for p4a_root in search_paths:
+                  toolchain = os.path.join(p4a_root, "pythonforandroid", "toolchain.py")
+                  if not os.path.exists(toolchain):
+                      continue
+                  
+                  with open(toolchain, 'r') as f:
+                      content = f.read()
+                  
+                  original = content
+                  
+                  # Fix minimum supported NDK value
+                  content = re.sub(
+                      r'minimum_supported_ndk\s*=\s*\d+',
+                      'minimum_supported_ndk = 23',
+                      content
+                  )
+                  content = re.sub(
+                      r'MINIMUM_SUPPORTED_NDK\s*=\s*\d+',
+                      'MINIMUM_SUPPORTED_NDK = 23',
+                      content
+                  )
+                  
+                  # Fix version comparison checks
+                  content = re.sub(
+                      r'ndk_version\s*<\s*2[4-9]',
+                      'ndk_version < 23',
+                      content
+                  )
+                  content = re.sub(
+                      r'ndk_version\s*<\s*3\d',
+                      'ndk_version < 23',
+                      content
+                  )
+                  
+                  # Fix error messages
+                  content = content.replace(
+                      'The minimum supported NDK version is 25',
+                      'The minimum supported NDK version is 23'
+                  )
+                  content = content.replace(
+                      'The currently recommended NDK version is 25b',
+                      'The currently recommended NDK version is 23b'
+                  )
+                  
+                  if content != original:
+                      with open(toolchain, 'w') as f:
+                          f.write(content)
+                      print(f"[NDKPatcher] Patched {toolchain}", file=sys.stderr)
+                      
+                      # Patch other p4a files that may check NDK version
+                      p4a_pkg = os.path.join(p4a_root, "pythonforandroid")
+                      if os.path.isdir(p4a_pkg):
+                          for fn in os.listdir(p4a_pkg):
+                              if fn.endswith('.py'):
+                                  fp = os.path.join(p4a_pkg, fn)
+                                  try:
+                                      with open(fp, 'r') as f:
+                                          fc = f.read()
+                                      ofc = fc
+                                      fc = re.sub(r'ndk_version\s*<\s*2[4-9]', 'ndk_version < 23', fc)
+                                      fc = re.sub(r'ndk_version\s*<\s*3\d', 'ndk_version < 23', fc)
+                                      fc = fc.replace("minimum NDK version is 25", "minimum NDK version is 23")
+                                      if fc != ofc:
+                                          with open(fp, 'w') as f:
+                                              f.write(fc)
+                                          print(f"[NDKPatcher] Patched {fp}", file=sys.stderr)
+                                  except Exception:
+                                      pass
+                      break
+          
+          # Patch on first import of pythonforandroid
+          _original_import = __builtins__.__import__
+          _patched = False
+          
+          def _ndk_patched_import(name, *args, **kwargs):
+              global _patched
+              if not _patched and name.startswith('pythonforandroid'):
+                  patch_p4a_ndk_check()
+                  _patched = True
+              return _original_import(name, *args, **kwargs)
+          
+          __builtins__.__import__ = _ndk_patched_import
+          
+          # Also patch immediately if p4a already exists
+          patch_p4a_ndk_check()
+          PYEOF
+          
+          echo "✅ Installed sitecustomize.py NDK patcher"
+          
+          # Layer 2: Pre-clone p4a and patch it directly
           P4A_DIR="$HOME/.buildozer/android/platform/python-for-android"
           
-          # Run buildozer in background mode to trigger p4a clone, but we'll
-          # patch the file before p4a actually starts building.
-          # Instead, pre-clone and pre-patch:
-          
-          echo "=== Pre-cloning and patching p4a for NDK 23b ==="
-          
-          # Clone fresh p4a
-          rm -rf "$P4A_DIR"
-          git clone --depth 1 https://github.com/kivy/python-for-android.git "$P4A_DIR" 2>&1 | tail -3
-          
-          echo "Patching p4a NDK minimum version check..."
-          
-          # Patch the NDK minimum version in toolchain.py
-          TOOLCHAIN_FILE="$P4A_DIR/pythonforandroid/toolchain.py"
-          
-          if [ -f "$TOOLCHAIN_FILE" ]; then
-            # Change "minimum_supported_ndk = 25" to "minimum_supported_ndk = 23"
-            sed -i 's/minimum_supported_ndk\s*=\s*[0-9]\+/minimum_supported_ndk = 23/g' "$TOOLCHAIN_FILE"
-            
-            # Also patch any numeric check like "if ndk_version < 25" → "if ndk_version < 23"
-            sed -i 's/ndk_version\s*<\s*25/ndk_version < 23/g' "$TOOLCHAIN_FILE"
-            sed -i 's/ndk_version\s*<\s*24/ndk_version < 23/g' "$TOOLCHAIN_FILE"
-            
-            # Remove "recommend NDK 25b" message (cosmetic)
-            sed -i 's/The currently recommended NDK version is 25b/The currently recommended NDK version is 23b/g' "$TOOLCHAIN_FILE"
-            
-            echo "✅ Patched toolchain.py"
-            grep -n "minimum_supported_ndk" "$TOOLCHAIN_FILE" | head -3
-          else
-            echo "⚠️ toolchain.py not found at expected location"
+          if [ ! -d "$P4A_DIR" ]; then
+            echo "Pre-cloning p4a for patching..."
+            git clone --depth 1 https://github.com/kivy/python-for-android.git "$P4A_DIR" 2>&1 | tail -3
           fi
           
-          # Also check other files that might have NDK version checks
-          for f in "$P4A_DIR/pythonforandroid/"*.py; do
-            if grep -l "ndk.*version.*25\|minimum.*ndk.*25\|NDK.*25" "$f" 2>/dev/null; then
-              echo "Patching $f..."
-              sed -i 's/ndk.*version.*25/ndk_version >= 23/g' "$f" 2>/dev/null || true
-              sed -i 's/minimum.*ndk.*25/minimum_ndk = 23/g' "$f" 2>/dev/null || true
+          if [ -d "$P4A_DIR" ]; then
+            echo "Directly patching p4a toolchain.py..."
+            TOOLCHAIN="$P4A_DIR/pythonforandroid/toolchain.py"
+            
+            if [ -f "$TOOLCHAIN" ]; then
+              sed -i 's/minimum_supported_ndk\s*=\s*[0-9]\+/minimum_supported_ndk = 23/g' "$TOOLCHAIN"
+              sed -i 's/ndk_version\s*<\s*2[4-9]/ndk_version < 23/g' "$TOOLCHAIN"
+              sed -i 's/ndk_version\s*<\s*3[0-9]/ndk_version < 23/g' "$TOOLCHAIN"
+              sed -i 's/The currently recommended NDK version is 25b/The currently recommended NDK version is 23b/g' "$TOOLCHAIN"
+              sed -i 's/The minimum supported NDK version is 25/The minimum supported NDK version is 23/g' "$TOOLCHAIN"
+              
+              echo "Verifying patch:"
+              grep -n "minimum_supported_ndk\|NDK version is" "$TOOLCHAIN" | head -10
+              echo "✅ Direct patch applied"
+            else
+              echo "⚠️ toolchain.py not found at $TOOLCHAIN"
             fi
-          done
+          fi
           
-          # Mark p4a as already cloned so buildozer doesn't overwrite it
-          touch "$P4A_DIR/.git/HEAD"
-          
-          echo "=== Patching complete ==="
           echo ""
           echo "=== STARTING BUILD ==="
+          echo ""
           
           buildozer android debug 2>&1 | tee build_multiarch.log
           BUILD_EXIT=${PIPESTATUS[0]}
@@ -303,20 +412,26 @@ jobs:
           echo ""
           echo "Build exit code: $BUILD_EXIT"
           
+          # Clean up sitecustomize
+          rm -f "$SITE_PACKAGES/sitecustomize.py"
+          
+          # Collect the APK
           mkdir -p bin
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
           
           APK_COUNT=$(ls bin/*.apk 2>/dev/null | wc -l)
+          echo "APKs found: $APK_COUNT"
           
           if [ "$APK_COUNT" -gt 0 ]; then
             echo "apk_created=true" >> $GITHUB_OUTPUT
-            echo "✅ APK created!"
+            echo "✅ APK created successfully!"
             ls -lh bin/*.apk
           else
             echo "apk_created=false" >> $GITHUB_OUTPUT
-            echo "❌ No APK created"
+            echo "❌ No APK was created"
             echo ""
-            grep -i "error\|failed\|exception" build_multiarch.log | tail -30
+            echo "=== Errors from build log ==="
+            grep -iE "error|failed|exception|traceback" build_multiarch.log | grep -iv "warning\|prerequisites\|deprecated" | tail -40
           fi
       
       - name: Upload APK
@@ -340,14 +455,24 @@ jobs:
         run: |
           echo "============================================"
           echo "BUILD SUMMARY"
-          echo "NDK: ${{ steps.ndk.outputs.ndk-name }}"
-          echo "Python: 3.10.12"
-          echo "Archs: arm64-v8a + armeabi-v7a"
+          echo "============================================"
+          echo "Job Status: ${{ job.status }}"
+          echo ""
+          echo "Configuration:"
+          echo "  • NDK: ${{ steps.ndk.outputs.ndk-name }}"
+          echo "  • Python: 3.10.12"
+          echo "  • Architectures: arm64-v8a + armeabi-v7a"
+          echo "  • Output: Single fat APK"
           echo ""
           if ls bin/*.apk 2>/dev/null 1>&2; then
             echo "✅ APK CREATED!"
-            ls -lh bin/*.apk
+            ls -lh bin/*.apk 2>/dev/null
+            echo ""
+            echo "📥 Download artifact: MultiArch-APK-${{ github.run_number }}"
           else
-            echo "❌ NO APK — check build-logs artifact"
+            echo "❌ NO APK CREATED"
+            echo ""
+            echo "📥 Download artifact: build-logs-${{ github.run_number }}"
+            echo "   to inspect build errors"
           fi
           echo "============================================"
