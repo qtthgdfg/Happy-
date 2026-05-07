@@ -15,8 +15,8 @@ package.domain = org.example
 source.dir = .
 
 # (list) Application requirements
-# 🔑 FIXED: Removed version pin from python3, kivy version kept
-requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+# NDK 23b works with Python 3.10 on p4a master branch
+requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,ttf
@@ -57,41 +57,50 @@ services = Service:service.py
 service.source = %(source.dir)s/service.py
 
 # (list) List of permissions
-android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,\
-    FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,\
-    WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,\
-    POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,\
-    READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
 
-# (list) features of the app
+# (list) Features of the app
 android.features = android.hardware.wifi
 
-# (list) Targeted Android SDK version
+# (int) Targeted Android SDK version
 android.api = 33
 
-# (str) Minimum Android SDK version
+# (int) Minimum Android SDK version
 android.minapi = 21
 
 # (int) Target NDK version
-# 🔑 FIXED: Changed from 25b to 23b to avoid Python 3.14 conflict
-# NDK 23b works with p4a stable branch and Python 3.10
+# NDK 23b works with Python 3.10 and both arm64-v8a + armeabi-v7a
 android.ndk = 23b
 
-# (list) The Android arch to build for
+# (list) The Android archs to build for (single fat APK)
 android.archs = arm64-v8a, armeabi-v7a
 
+# SDK agreement
 android.accept_sdk_agreement = True
+
+# Allow backup
 android.allow_backup = True
+
+# Private storage
 android.private_storage = True
+
+# Presplash color (black)
 android.presplash_color = #000000
+
+# Keep screen awake
 android.wakelock = True
+
+# Hide loading screen
 android.hide_loading_screen = True
+
+# Enable AndroidX
 android.enable_androidx = True
-          
+
+# Debug mode
 android.debug = True
 
-# (str) Gradle version
-android.gradle_dependencies = 'androidx.core:core:1.10.1'
+# Gradle dependencies
+android.gradle_dependencies = androidx.core:core:1.10.1
 
 # ----------------------------------------------------------
 # Android SERVICE configuration
@@ -115,8 +124,11 @@ android.foreground_service_type = dataSync
 # ----------------------------------------------------------
 # p4a configuration
 # ----------------------------------------------------------
-# 🔑 FIXED: Removed p4a.branch = develop (not needed with NDK 23b)
-# 🔑 FIXED: p4a.python_version is NOT a valid setting, removed
+
+# p4a branch (master is stable, works with NDK 23b + Python 3.10)
+p4a.branch = master
+
+# Bootstrap
 android.p4a_bootstrap = sdl2
 
 # ----------------------------------------------------------
@@ -152,4 +164,6 @@ android.release_artifact = apk
 # android.release.key_password = password
 
 [buildozer]
+
+# (str) Log level (trace, debug, info, warning, error, critical)
 log_level = 2
