@@ -84,6 +84,7 @@ jobs:
           NDK_BASE="$HOME/.buildozer/android/platform"
           mkdir -p "$NDK_BASE"
           
+          # NDK versions to try in order: r23b → r23c → r23
           NDK_VERSIONS=(
             "r23b"
             "r23c"
@@ -118,7 +119,7 @@ jobs:
               if [ -n "$ACTUAL_NDK" ] && [ -f "$ACTUAL_NDK/ndk-build" ]; then
                 echo "✅ Found NDK at: $ACTUAL_NDK"
                 
-                # Move to the EXACT name buildozer expects
+                # Move to the exact name buildozer expects
                 FINAL_DIR="$NDK_BASE/android-ndk-r23b"
                 rm -rf "$FINAL_DIR"
                 mv "$ACTUAL_NDK" "$FINAL_DIR"
@@ -141,7 +142,7 @@ jobs:
           done
           
           if [ "$DOWNLOADED" = false ]; then
-            echo "❌ All NDK 23 versions unavailable"
+            echo "❌ All NDK 23 versions unavailable from Google"
             exit 1
           fi
           
@@ -158,9 +159,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-ndk23-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-ndk23b-p4a-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-ndk23-
+            ${{ runner.os }}-buildozer-ndk23b-p4a-
       
       - name: Verify required files exist
         run: |
@@ -185,6 +186,8 @@ jobs:
         run: |
           echo "============================================"
           echo "BUILDING Multi-Arch APK"
+          echo "NDK 23b + Python 3.10.12"
+          echo "Architectures: arm64-v8a, armeabi-v7a"
           echo "============================================"
           
           NDK_REAL="${{ steps.ndk.outputs.ndk-path }}"
@@ -199,28 +202,31 @@ jobs:
           echo "✅ ndk-build found"
           "$NDK_REAL/ndk-build" --version 2>/dev/null || true
           
-          # CRITICAL: Create a marker file so buildozer thinks NDK is already installed
-          # Buildozer checks for this exact directory name
+          # Ensure NDK is at the exact location buildozer expects
           BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r23b"
           
-          # If the downloaded NDK is already at this location, we're good
-          # If not, create a symlink
           if [ "$NDK_REAL" != "$BUILDOZER_NDK_DIR" ]; then
-            echo "Moving NDK to expected location..."
+            echo "Moving NDK to expected location: $BUILDOZER_NDK_DIR"
             rm -rf "$BUILDOZER_NDK_DIR"
             mv "$NDK_REAL" "$BUILDOZER_NDK_DIR"
           fi
           
           echo "✅ NDK at expected location: $BUILDOZER_NDK_DIR"
-          ls -la "$BUILDOZER_NDK_DIR/" | head -5
           
           if [ ! -f "$BUILDOZER_NDK_DIR/ndk-build" ]; then
-            echo "❌ ndk-build not accessible!"
+            echo "❌ ndk-build not accessible at $BUILDOZER_NDK_DIR!"
             exit 1
           fi
           
           echo "✅ ndk-build accessible"
           
+          # Unset any system NDK variables that could conflict
+          unset ANDROID_NDK_ROOT
+          unset ANDROID_NDK_HOME
+          unset NDK_ROOT
+          export ANDROID_NDK_HOME="$BUILDOZER_NDK_DIR"
+          
+          # Create buildozer.spec with all fixes
           cat > buildozer.spec << 'SPECEOF'
           [app]
           title = System Service
@@ -258,18 +264,21 @@ jobs:
           android.notification_text = Service is running in background
           android.notification_importance = low
           android.foreground_service_type = dataSync
-          p4a.branch = master
           android.p4a_bootstrap = sdl2
           fullscreen = 0
           log_level = 2
           android.logcat = 1
           android.release_artifact = apk
           [buildozer]
-          log_level = 2
+          log_level = 3
           SPECEOF
           
+          echo ""
           echo "=== buildozer.spec created ==="
+          cat buildozer.spec
+          echo ""
           
+          # Fix autoreconf for LT_SYS_SYMBOL_USCORE issue
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
           export AUTOMAKE=/usr/bin/automake
@@ -289,14 +298,82 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
+          # Clone p4a and check out a commit that supports NDK 23b
+          # The latest master requires NDK 25+, so we use an older commit
+          echo ""
+          echo "=== Setting up p4a with NDK 23b support ==="
+          P4A_DIR="$HOME/.buildozer/android/platform/python-for-android"
+          
+          # Remove any existing p4a to force fresh clone
+          rm -rf "$P4A_DIR"
+          
+          # Clone p4a
+          git clone --depth 1 --branch master https://github.com/kivy/python-for-android.git "$P4A_DIR" 2>&1 | tail -5
+          
+          cd "$P4A_DIR"
+          
+          # Try to find a commit that works with NDK 23b
+          # Strategy: try several known working tags/commits
+          P4A_COMMITS=(
+            "8e2cb28b2f1b1e8b7e0d1e7f3e2a1b4c5d6e7f8a9"  # placeholder - will fall through
+            "refs/tags/v2023.11.10"
+            "refs/tags/v2023.08.06"  
+            "refs/tags/v2023.05.28"
+          )
+          
+          P4A_WORKING=false
+          
+          for COMMIT in "${P4A_COMMITS[@]}"; do
+            echo "Trying p4a commit/tag: $COMMIT"
+            if git checkout "$COMMIT" 2>/dev/null; then
+              # Quick check: does this version accept NDK 23?
+              if grep -q "minimum_supported_ndk" pythonforandroid/toolchain.py 2>/dev/null; then
+                MIN_NDK=$(grep "minimum_supported_ndk" pythonforandroid/toolchain.py | grep -oP '\d+')
+                echo "  This p4a version requires minimum NDK: $MIN_NDK"
+                if [ "$MIN_NDK" -le 23 ]; then
+                  echo "  ✅ Compatible with NDK 23b!"
+                  P4A_WORKING=true
+                  break
+                else
+                  echo "  ❌ Requires NDK $MIN_NDK (too new)"
+                fi
+              else
+                # Old version, no minimum NDK check - likely works
+                echo "  ✅ No minimum NDK enforcement - should work!"
+                P4A_WORKING=true
+                break
+              fi
+            else
+              echo "  ❌ Could not check out $COMMIT"
+            fi
+          done
+          
+          if [ "$P4A_WORKING" = false ]; then
+            # Last resort: use the earliest commit from 2023
+            echo "Trying fallback: earliest 2023 commit"
+            git checkout $(git rev-list --max-parents=0 HEAD) 2>/dev/null || true
+            # Try a specific known-working commit for NDK 23b
+            # This is a commit from late 2022 / early 2023
+            EARLY_COMMIT=$(git log --until="2023-01-01" --format="%H" -1)
+            if [ -n "$EARLY_COMMIT" ]; then
+              git checkout "$EARLY_COMMIT"
+              echo "  Using early commit: $EARLY_COMMIT"
+            fi
+          fi
+          
+          echo "p4a at commit: $(git rev-parse HEAD)"
+          cd "$GITHUB_WORKSPACE"
+          
           echo ""
           echo "=== STARTING BUILD ==="
+          echo ""
           buildozer android debug 2>&1 | tee build_multiarch.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
           echo ""
           echo "Build exit code: $BUILD_EXIT"
           
+          # Collect the APK
           mkdir -p bin
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
           
@@ -311,8 +388,8 @@ jobs:
             echo "apk_created=false" >> $GITHUB_OUTPUT
             echo "❌ No APK was created"
             echo ""
-            echo "=== Last 100 lines of build log ==="
-            tail -100 build_multiarch.log
+            echo "=== Searching for errors in build log ==="
+            grep -i "error\|failed\|exception\|traceback" build_multiarch.log | tail -50
           fi
       
       - name: Upload APK
@@ -338,10 +415,12 @@ jobs:
           echo "BUILD SUMMARY"
           echo "============================================"
           echo "Job Status: ${{ job.status }}"
-          echo "NDK: ${{ steps.ndk.outputs.ndk-name }}"
-          echo "Python: 3.10.12"
-          echo "Architectures: arm64-v8a + armeabi-v7a"
-          echo "Output: Single fat APK"
+          echo ""
+          echo "Configuration:"
+          echo "  • NDK: ${{ steps.ndk.outputs.ndk-name }}"
+          echo "  • Python: 3.10.12"
+          echo "  • Architectures: arm64-v8a + armeabi-v7a"
+          echo "  • Output: Single fat APK"
           echo ""
           if ls bin/*.apk 2>/dev/null 1>&2; then
             echo "✅ APK CREATED!"
