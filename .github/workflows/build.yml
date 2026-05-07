@@ -78,87 +78,62 @@ jobs:
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
       
-      # 🔑 NDK FALLBACK: Try multiple NDK 23 versions in order
-      # Google's NDK archive: https://dl.google.com/android/repository/android-ndk-VERSION-linux.zip
+      # 🔑 DOWNLOAD NDK 23 WITH FALLBACK
       - name: Download NDK 23 with fallback
         id: ndk
         run: |
           NDK_BASE="$HOME/.buildozer/android/platform"
           mkdir -p "$NDK_BASE"
           
-          # Define NDK versions to try (in preference order)
-          # Format: "version_string:buildozer_name"
           NDK_VERSIONS=(
-            "23.1.7779620:n23b"
-            "23.0.7599858:n23"
-            "23.2.8568313:n23c"
+            "r23b:23.1.7779620:r23b"
+            "r23c:23.2.8568313:r23c"
+            "r23:23.0.7599858:r23"
           )
           
           DOWNLOADED=false
           
           for NDK_ENTRY in "${NDK_VERSIONS[@]}"; do
-            NDK_VER="${NDK_ENTRY%%:*}"
-            NDK_NAME="${NDK_ENTRY##*:}"
-            NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VER}-linux.zip"
-            NDK_ZIP="/tmp/android-ndk-${NDK_VER}.zip"
-            NDK_DIR="$NDK_BASE/android-ndk-${NDK_VER}"
+            IFS=':' read -r GOOGLE_NAME NDK_VER BZR_NAME <<< "$NDK_ENTRY"
+            NDK_URL="https://dl.google.com/android/repository/android-ndk-${GOOGLE_NAME}-linux.zip"
+            NDK_ZIP="/tmp/android-ndk-${GOOGLE_NAME}.zip"
+            NDK_DIR="$NDK_BASE/android-ndk-${GOOGLE_NAME}"
             
             echo ""
-            echo "============================================"
-            echo "Trying NDK version: $NDK_VER ($NDK_NAME)"
-            echo "URL: $NDK_URL"
-            echo "============================================"
+            echo "Trying: $NDK_URL"
             
-            # Try to download
             HTTP_CODE=$(curl -sL -o "$NDK_ZIP" -w "%{http_code}" "$NDK_URL")
             
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Download successful (HTTP $HTTP_CODE)"
-              echo "Extracting NDK $NDK_VER..."
+              echo "✅ Downloaded, extracting..."
               unzip -q -o "$NDK_ZIP" -d "$NDK_BASE"
               rm -f "$NDK_ZIP"
               
-              # Verify extraction
-              if [ -d "$NDK_DIR" ] && [ -f "$NDK_DIR/ndk-build" ]; then
-                echo "✅ NDK $NDK_VER extracted successfully"
-                echo "ndk-version=$NDK_VER" >> $GITHUB_OUTPUT
-                echo "ndk-name=$NDK_NAME" >> $GITHUB_OUTPUT
-                echo "ndk-path=$NDK_DIR" >> $GITHUB_OUTPUT
-                echo "ndk-buildozer-name=android-ndk-r${NDK_NAME#n}" >> $GITHUB_OUTPUT
+              FINAL_DIR=$(find "$NDK_BASE" -maxdepth 2 -name "ndk-build" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+              if [ -n "$FINAL_DIR" ] && [ -f "$FINAL_DIR/ndk-build" ]; then
+                echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
+                echo "ndk-name=${GOOGLE_NAME}" >> $GITHUB_OUTPUT
+                echo "ndk-buildozer-name=android-ndk-${GOOGLE_NAME}" >> $GITHUB_OUTPUT
                 DOWNLOADED=true
                 break
-              else
-                echo "⚠️ Extraction incomplete, trying next..."
               fi
             else
-              echo "❌ Download failed (HTTP $HTTP_CODE)"
+              echo "❌ HTTP $HTTP_CODE"
               rm -f "$NDK_ZIP"
             fi
           done
           
           if [ "$DOWNLOADED" = false ]; then
-            echo ""
-            echo "============================================"
-            echo "❌ ALL NDK VERSIONS FAILED TO DOWNLOAD"
-            echo "============================================"
-            echo "Tried versions:"
-            for NDK_ENTRY in "${NDK_VERSIONS[@]}"; do
-              echo "  - ${NDK_ENTRY%%:*}"
-            done
+            echo "❌ All NDK 23 versions unavailable from Google"
             exit 1
           fi
           
-          echo ""
-          echo "============================================"
-          echo "✅ SELECTED NDK: ${{ steps.ndk.outputs.ndk-version }}"
-          echo "   Path: ${{ steps.ndk.outputs.ndk-path }}"
-          echo "============================================"
+          echo "✅ NDK ${{ steps.ndk.outputs.ndk-name }} ready"
       
       - name: Clean old buildozer cache
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
-          # Don't remove the NDK we just downloaded!
           echo "Cleaned old build cache"
       
       - name: Cache build dependencies
@@ -171,53 +146,22 @@ jobs:
       
       - name: Verify required files exist
         run: |
-          echo "=== Checking required files ==="
-          if [ -f "main.py" ]; then 
-            echo "✅ main.py found ($(wc -l < main.py) lines)"
-          else 
-            echo "❌ main.py MISSING"
-            exit 1
-          fi
-          if [ -f "service.py" ]; then 
-            echo "✅ service.py found ($(wc -l < service.py) lines)"
-          else 
-            echo "❌ service.py MISSING"
-            exit 1
-          fi
-          echo "=== Files in repository ==="
+          if [ -f "main.py" ]; then echo "✅ main.py found"; else echo "❌ main.py MISSING"; exit 1; fi
+          if [ -f "service.py" ]; then echo "✅ service.py found"; else echo "❌ service.py MISSING"; exit 1; fi
           ls -la
       
-      # 🔑 BUILD: Both architectures in ONE build = single fat APK
-      - name: Build Multi-Arch APK (arm64-v8a + armeabi-v7a)
+      - name: Build Multi-Arch APK
         id: build
         run: |
-          echo "============================================"
-          echo "BUILDING Multi-Arch APK"
-          echo "NDK: ${{ steps.ndk.outputs.ndk-version }}"
-          echo "Python: 3.10.12"
-          echo "Architectures: arm64-v8a, armeabi-v7a"
-          echo "============================================"
-          
-          # Link the downloaded NDK to where buildozer expects it
           NDK_PATH="${{ steps.ndk.outputs.ndk-path }}"
-          BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform"
-          BUILDOZER_NDK_NAME="${{ steps.ndk.outputs.ndk-buildozer-name }}"
+          NDK_NAME="${{ steps.ndk.outputs.ndk-name }}"
+          BUILDOZER_NDK="$HOME/.buildozer/android/platform/android-ndk-${NDK_NAME}"
           
-          mkdir -p "$BUILDOZER_NDK_DIR"
-          rm -f "$BUILDOZER_NDK_DIR/$BUILDOZER_NDK_NAME" 2>/dev/null || true
-          ln -sf "$NDK_PATH" "$BUILDOZER_NDK_DIR/$BUILDOZER_NDK_NAME"
-          echo "✅ Linked NDK: $NDK_PATH → $BUILDOZER_NDK_DIR/$BUILDOZER_NDK_NAME"
+          mkdir -p "$HOME/.buildozer/android/platform"
+          rm -f "$BUILDOZER_NDK" 2>/dev/null || true
+          ln -sf "$NDK_PATH" "$BUILDOZER_NDK"
+          echo "✅ Symlinked NDK: $NDK_PATH → $BUILDOZER_NDK"
           
-          # Determine the NDK name for buildozer.spec
-          # buildozer expects android-ndk-r23b, android-ndk-r23, etc.
-          NDK_SPEC_NAME="r${{ steps.ndk.outputs.ndk-name }}"
-          NDK_SPEC_NAME="${NDK_SPEC_NAME#rn}"  # remove double 'r' if present
-          NDK_SPEC_NAME="r${NDK_SPEC_NAME}"
-          # Handle: n23b → r23b, n23 → r23, n23c → r23c
-          NDK_SPEC_NAME="${NDK_SPEC_NAME//n/r}"
-          echo "NDK spec name: $NDK_SPEC_NAME"
-          
-          # Create buildozer.spec with BOTH architectures
           cat > buildozer_multiarch.spec << SPECEOF
           [app]
           title = System Service
@@ -238,7 +182,7 @@ jobs:
           android.features = android.hardware.wifi
           android.api = 33
           android.minapi = 21
-          android.ndk = ${NDK_SPEC_NAME}
+          android.ndk = ${NDK_NAME}
           android.archs = arm64-v8a, armeabi-v7a
           android.gradle_dependencies = androidx.core:core:1.10.1
           android.accept_sdk_agreement = True
@@ -264,10 +208,6 @@ jobs:
           log_level = 2
           SPECEOF
           
-          echo "=== Generated buildozer.spec ==="
-          cat buildozer_multiarch.spec
-          
-          # Fix autoreconf for LT_SYS_SYMBOL_USCORE issue
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
           export AUTOMAKE=/usr/bin/automake
@@ -278,7 +218,6 @@ jobs:
           #!/bin/bash
           for f in configure configure.ac; do
             if [ -f "$f" ] && grep -q "LT_SYS_SYMBOL_USCORE" "$f" 2>/dev/null; then
-              echo "[FIX] Patching $f..."
               sed -i 's/LT_SYS_SYMBOL_USCORE/AC_CHECK_FUNCS(rindex)/g' "$f"
             fi
           done
@@ -287,26 +226,20 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # Single build for both architectures → one fat APK
           buildozer --spec buildozer_multiarch.spec android debug 2>&1 | tee build_multiarch.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
-          echo "Build exit code: $BUILD_EXIT"
-          
-          # Collect the APK
           mkdir -p bin
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
           
           APK_COUNT=$(ls bin/*.apk 2>/dev/null | wc -l)
-          echo "APKs found: $APK_COUNT"
-          
           if [ "$APK_COUNT" -gt 0 ]; then
             echo "apk_created=true" >> $GITHUB_OUTPUT
-            echo "✅ APK created successfully!"
+            echo "✅ APK created!"
             ls -lh bin/*.apk
           else
             echo "apk_created=false" >> $GITHUB_OUTPUT
-            echo "❌ No APK was created"
+            echo "❌ No APK created"
           fi
       
       - name: Upload APK
@@ -317,7 +250,7 @@ jobs:
           path: bin/*.apk
           retention-days: 30
       
-      - name: Upload Build Logs (ALWAYS)
+      - name: Upload Build Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -330,24 +263,12 @@ jobs:
         run: |
           echo "============================================"
           echo "BUILD SUMMARY"
-          echo "============================================"
-          echo "Job Status: ${{ job.status }}"
-          echo ""
-          echo "Configuration:"
-          echo "  • NDK: ${{ steps.ndk.outputs.ndk-version }} (${{ steps.ndk.outputs.ndk-name }})"
-          echo "  • Python: 3.10.12"
-          echo "  • Architectures: arm64-v8a + armeabi-v7a"
-          echo "  • Output: Single fat APK"
-          echo ""
+          echo "NDK: ${{ steps.ndk.outputs.ndk-name }}"
+          echo "Architectures: arm64-v8a + armeabi-v7a"
           if ls bin/*.apk 2>/dev/null 1>&2; then
             echo "✅ APK CREATED!"
-            ls -lh bin/*.apk 2>/dev/null
-            echo ""
-            echo "📥 Download artifact: MultiArch-APK-${{ github.run_number }}"
+            ls -lh bin/*.apk
           else
-            echo "❌ NO APK CREATED"
-            echo ""
-            echo "📥 Download artifact: build-logs-${{ github.run_number }}"
-            echo "   to inspect build errors"
+            echo "❌ NO APK — check build-logs artifact"
           fi
           echo "============================================"
