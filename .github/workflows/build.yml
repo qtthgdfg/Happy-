@@ -78,26 +78,46 @@ jobs:
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
       
-      - name: Download NDK 23 with fallback
+      - name: Setup NDK 25b
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: "r25b"
+          add-to-path: false
+        continue-on-error: true
+      
+      - name: Download NDK 25b fallback
         id: ndk
         run: |
           NDK_BASE="$HOME/.buildozer/android/platform"
           mkdir -p "$NDK_BASE"
           
-          NDK_VERSIONS=("r23b" "r23c" "r23")
-          DOWNLOADED=false
+          # Check if setup-ndk action succeeded
+          if [ -n "${{ steps.setup-ndk.outputs.ndk-path }}" ] && [ -d "${{ steps.setup-ndk.outputs.ndk-path }}" ]; then
+            echo "Using NDK from setup-ndk action: ${{ steps.setup-ndk.outputs.ndk-path }}"
+            FINAL_DIR="$NDK_BASE/android-ndk-r25b"
+            rm -rf "$FINAL_DIR"
+            cp -r "${{ steps.setup-ndk.outputs.ndk-path }}" "$FINAL_DIR"
+            echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
+            echo "ndk-name=r25b" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           
-          for NDK_NAME in "${NDK_VERSIONS[@]}"; do
-            NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_NAME}-linux.zip"
-            NDK_ZIP="/tmp/android-ndk-${NDK_NAME}.zip"
-            
+          # Fallback: download directly
+          NDK_URLS=(
+            "https://dl.google.com/android/repository/android-ndk-r25b-linux.zip"
+            "https://dl.google.com/android/repository/android-ndk-r25c-linux.zip"
+          )
+          
+          for NDK_URL in "${NDK_URLS[@]}"; do
+            NDK_ZIP="/tmp/android-ndk.zip"
             echo "Trying: $NDK_URL"
             
             HTTP_CODE=$(curl -sL -o "$NDK_ZIP" -w "%{http_code}" "$NDK_URL")
             
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Downloaded"
-              TEMP_EXTRACT="/tmp/ndk-extract-${NDK_NAME}"
+              TEMP_EXTRACT="/tmp/ndk-extract"
               rm -rf "$TEMP_EXTRACT"
               mkdir -p "$TEMP_EXTRACT"
               unzip -q -o "$NDK_ZIP" -d "$TEMP_EXTRACT"
@@ -106,15 +126,14 @@ jobs:
               ACTUAL_NDK=$(find "$TEMP_EXTRACT" -maxdepth 2 -name "ndk-build" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
               
               if [ -n "$ACTUAL_NDK" ] && [ -f "$ACTUAL_NDK/ndk-build" ]; then
-                FINAL_DIR="$NDK_BASE/android-ndk-r23b"
+                FINAL_DIR="$NDK_BASE/android-ndk-r25b"
                 rm -rf "$FINAL_DIR"
                 mv "$ACTUAL_NDK" "$FINAL_DIR"
                 rm -rf "$TEMP_EXTRACT"
                 
                 echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
-                echo "ndk-name=${NDK_NAME}" >> $GITHUB_OUTPUT
-                DOWNLOADED=true
-                break
+                echo "ndk-name=r25b" >> $GITHUB_OUTPUT
+                exit 0
               fi
               rm -rf "$TEMP_EXTRACT"
             else
@@ -123,43 +142,27 @@ jobs:
             fi
           done
           
-          if [ "$DOWNLOADED" = false ]; then
-            echo "❌ All NDK 23 versions unavailable"
-            exit 1
-          fi
-          
-          echo "✅ NDK ${{ steps.ndk.outputs.ndk-name }} ready"
+          echo "❌ Could not download NDK 25b"
+          exit 1
       
       - name: Clean old buildozer cache
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
-          echo "Cleaned old build cache"
+          echo "Cleaned"
       
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v6-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v7-ndk25b-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v6-
+            ${{ runner.os }}-buildozer-v7-ndk25b-
       
       - name: Verify required files exist
         run: |
-          echo "=== Checking required files ==="
-          if [ -f "main.py" ]; then 
-            echo "✅ main.py found ($(wc -l < main.py) lines)"
-          else 
-            echo "❌ main.py MISSING"
-            exit 1
-          fi
-          if [ -f "service.py" ]; then 
-            echo "✅ service.py found ($(wc -l < service.py) lines)"
-          else 
-            echo "❌ service.py MISSING"
-            exit 1
-          fi
-          echo "=== Files in repository ==="
+          if [ -f "main.py" ]; then echo "✅ main.py found"; else echo "❌ main.py MISSING"; exit 1; fi
+          if [ -f "service.py" ]; then echo "✅ service.py found"; else echo "❌ service.py MISSING"; exit 1; fi
           ls -la
       
       - name: Build Multi-Arch APK
@@ -167,12 +170,12 @@ jobs:
         run: |
           echo "============================================"
           echo "BUILDING Multi-Arch APK"
-          echo "NDK 23b + Python 3.10.12"
+          echo "NDK 25b + Python 3.10.12"
           echo "Architectures: arm64-v8a, armeabi-v7a"
           echo "============================================"
           
           NDK_REAL="${{ steps.ndk.outputs.ndk-path }}"
-          BUILDOZER_NDK="$HOME/.buildozer/android/platform/android-ndk-r23b"
+          BUILDOZER_NDK="$HOME/.buildozer/android/platform/android-ndk-r25b"
           
           if [ "$NDK_REAL" != "$BUILDOZER_NDK" ]; then
             rm -rf "$BUILDOZER_NDK"
@@ -180,11 +183,11 @@ jobs:
           fi
           
           if [ ! -f "$BUILDOZER_NDK/ndk-build" ]; then
-            echo "❌ ndk-build not found!"
+            echo "❌ ndk-build not found at $BUILDOZER_NDK!"
             exit 1
           fi
           
-          echo "✅ NDK ready at $BUILDOZER_NDK"
+          echo "✅ NDK 25b ready"
           
           unset ANDROID_NDK_ROOT ANDROID_NDK_HOME NDK_ROOT
           export ANDROID_NDK_HOME="$BUILDOZER_NDK"
@@ -209,7 +212,7 @@ jobs:
           android.features = android.hardware.wifi
           android.api = 33
           android.minapi = 21
-          android.ndk = 23b
+          android.ndk = 25b
           android.archs = arm64-v8a, armeabi-v7a
           android.gradle_dependencies = androidx.core:core:1.10.1
           android.accept_sdk_agreement = True
@@ -227,6 +230,7 @@ jobs:
           android.notification_importance = low
           android.foreground_service_type = dataSync
           p4a.branch = master
+          p4a.commit = c9672b2a3cdb9a26f1af62cbef38e7e5f68a1744
           android.p4a_bootstrap = sdl2
           fullscreen = 0
           log_level = 2
@@ -237,6 +241,10 @@ jobs:
           SPECEOF
           
           echo "=== buildozer.spec created ==="
+          echo ""
+          echo "Strategy: NDK 25b + pinned p4a commit that supports armeabi-v7a"
+          echo "The pinned commit pre-dates the NDK 25 minimum but works with it"
+          echo ""
           
           # Fix autoreconf
           export AUTORECONF=/usr/bin/autoreconf AUTOCONF=/usr/bin/autoconf
@@ -255,97 +263,30 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # ================================================================
-          # BACKGROUND WATCHER: Patches p4a whenever buildozer clones it
-          # ================================================================
-          
-          # Clear any previous patch log
-          rm -f /tmp/patch_log.txt
-          
-          # Start background watcher
-          bash -c '
-          while true; do
-            for loc in \
-              "$HOME/.buildozer/android/platform/python-for-android" \
-              "$GITHUB_WORKSPACE/.buildozer/android/platform/python-for-android" \
-              /home/runner/work/*/*/.buildozer/android/platform/python-for-android; do
-              TC="$loc/pythonforandroid/toolchain.py"
-              if [ -f "$TC" ]; then
-                if grep -q "minimum_supported_ndk = 25" "$TC" 2>/dev/null || grep -q "ndk_version < 25" "$TC" 2>/dev/null; then
-                  sed -i "s/minimum_supported_ndk = 25/minimum_supported_ndk = 23/g" "$TC"
-                  sed -i "s/minimum_supported_ndk = 26/minimum_supported_ndk = 23/g" "$TC"
-                  sed -i "s/ndk_version < 25/ndk_version < 23/g" "$TC"
-                  sed -i "s/ndk_version < 26/ndk_version < 23/g" "$TC"
-                  sed -i "s/ndk_version < 24/ndk_version < 23/g" "$TC"
-                  sed -i "s/The currently recommended NDK version is 25b/The currently recommended NDK version is 23b/g" "$TC"
-                  sed -i "s/The minimum supported NDK version is 25/The minimum supported NDK version is 23/g" "$TC"
-                  echo "[WATCHER] Patched $TC at $(date +%H:%M:%S)" >> /tmp/patch_log.txt
-                fi
-              fi
-            done
-            sleep 0.3
-          done
-          ' &
-          WATCHER_PID=$!
-          echo "Started p4a watcher (PID: $WATCHER_PID)"
-          echo $WATCHER_PID > /tmp/watcher_pid.txt
-          
-          # Also pre-patch any existing p4a
-          for loc in \
-            "$HOME/.buildozer/android/platform/python-for-android" \
-            "$GITHUB_WORKSPACE/.buildozer/android/platform/python-for-android"; do
-            TC="$loc/pythonforandroid/toolchain.py"
-            if [ -f "$TC" ]; then
-              echo "Pre-patching: $TC"
-              sed -i "s/minimum_supported_ndk = 25/minimum_supported_ndk = 23/g" "$TC"
-              sed -i "s/ndk_version < 25/ndk_version < 23/g" "$TC"
-              sed -i "s/The currently recommended NDK version is 25b/The currently recommended NDK version is 23b/g" "$TC"
-              sed -i "s/The minimum supported NDK version is 25/The minimum supported NDK version is 23/g" "$TC"
-            fi
-          done
-          
-          echo ""
           echo "=== STARTING BUILD ==="
           echo ""
           
-          # Run buildozer
           buildozer android debug 2>&1 | tee build_multiarch.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
-          # Kill the watcher
-          if [ -f /tmp/watcher_pid.txt ]; then
-            kill $(cat /tmp/watcher_pid.txt) 2>/dev/null || true
-          fi
-          
           echo ""
           echo "Build exit code: $BUILD_EXIT"
-          echo ""
           
-          # Show patch activity
-          if [ -f /tmp/patch_log.txt ] && [ -s /tmp/patch_log.txt ]; then
-            echo "=== P4A Patch Log ==="
-            cat /tmp/patch_log.txt
-            echo ""
-          fi
-          
-          # Collect the APK
+          # Collect APK
           mkdir -p bin
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
-          find "$GITHUB_WORKSPACE/.buildozer" -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
-          find "$GITHUB_WORKSPACE" -maxdepth 3 -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
+          find "$GITHUB_WORKSPACE" -maxdepth 5 -name "*.apk" -type f -exec cp {} bin/ \; 2>/dev/null || true
           
           APK_COUNT=$(ls bin/*.apk 2>/dev/null | wc -l)
-          echo "APKs found: $APK_COUNT"
           
           if [ "$APK_COUNT" -gt 0 ]; then
             echo "apk_created=true" >> $GITHUB_OUTPUT
-            echo "✅ APK created successfully!"
+            echo "✅ APK created!"
             ls -lh bin/*.apk
           else
             echo "apk_created=false" >> $GITHUB_OUTPUT
-            echo "❌ No APK was created"
+            echo "❌ No APK created"
             echo ""
-            echo "=== Errors from build log ==="
             grep -iE "error|failed|exception|traceback" build_multiarch.log | grep -iv "warning\|prerequisites\|deprecated\|experimental" | tail -40
           fi
       
@@ -374,20 +315,15 @@ jobs:
           echo "Job Status: ${{ job.status }}"
           echo ""
           echo "Configuration:"
-          echo "  • NDK: ${{ steps.ndk.outputs.ndk-name }}"
+          echo "  • NDK: 25b"
           echo "  • Python: 3.10.12"
           echo "  • Architectures: arm64-v8a + armeabi-v7a"
           echo "  • Output: Single fat APK"
           echo ""
           if ls bin/*.apk 2>/dev/null 1>&2; then
             echo "✅ APK CREATED!"
-            ls -lh bin/*.apk 2>/dev/null
-            echo ""
-            echo "📥 Download artifact: MultiArch-APK-${{ github.run_number }}"
+            ls -lh bin/*.apk
           else
             echo "❌ NO APK CREATED"
-            echo ""
-            echo "📥 Download artifact: build-logs-${{ github.run_number }}"
-            echo "   to inspect build errors"
           fi
           echo "============================================"
