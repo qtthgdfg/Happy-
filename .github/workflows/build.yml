@@ -78,28 +78,48 @@ jobs:
           echo "$ANDROID_SDK_ROOT/tools/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
       
-      # 🔑 Setup NDK 25b ONLY (minimum required by p4a)
+      # 🔑 Download and setup NDK 25b manually
       - name: Setup NDK 25b
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: "25.2.9519653"
-          add-to-path: false
+        run: |
+          echo "Downloading NDK 25b..."
+          NDK_VERSION="25.2.9519653"
+          NDK_ZIP="android-ndk-r25b-linux.zip"
+          NDK_URL="https://dl.google.com/android/repository/${NDK_ZIP}"
+          
+          cd /tmp
+          wget -q --show-progress "$NDK_URL" || curl -L -o "$NDK_ZIP" "$NDK_URL"
+          
+          echo "Extracting NDK..."
+          unzip -q "$NDK_ZIP"
+          rm "$NDK_ZIP"
+          
+          # Move to buildozer expected location
+          BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform"
+          mkdir -p "$BUILDOZER_NDK_DIR"
+          
+          # Remove old NDK if exists
+          rm -rf "$BUILDOZER_NDK_DIR/android-ndk-r25b" 2>/dev/null || true
+          
+          # Move the extracted NDK
+          mv android-ndk-r25b "$BUILDOZER_NDK_DIR/android-ndk-r25b"
+          
+          # Verify installation
+          echo "NDK installed at: $BUILDOZER_NDK_DIR/android-ndk-r25b"
+          if [ -f "$BUILDOZER_NDK_DIR/android-ndk-r25b/ndk-build" ]; then
+            echo "✅ NDK 25b installed successfully!"
+          else
+            echo "❌ NDK installation failed!"
+            exit 1
+          fi
+          
+          # Set environment variable
+          echo "ANDROID_NDK_HOME=$BUILDOZER_NDK_DIR/android-ndk-r25b" >> $GITHUB_ENV
       
       - name: Clean old buildozer cache
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
-          rm -rf ~/.buildozer/android/platform/android-ndk-* 2>/dev/null || true
           echo "Cleaned old build cache"
-      
-      - name: Cache build dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v26-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
-          restore-keys: |
-            ${{ runner.os }}-buildozer-v26-
       
       - name: Verify required files exist
         run: |
@@ -125,14 +145,6 @@ jobs:
           echo "============================================"
           echo "BUILDING armeabi-v7a with NDK 25b + Python 3.10"
           echo "============================================"
-          
-          # Link NDK 25b
-          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform"
-          mkdir -p "$BUILDOZER_NDK_DIR"
-          rm -f "$BUILDOZER_NDK_DIR/android-ndk-r25b" 2>/dev/null || true
-          ln -sf "$NDK_PATH" "$BUILDOZER_NDK_DIR/android-ndk-r25b"
-          echo "✅ Linked NDK 25b: $NDK_PATH → $BUILDOZER_NDK_DIR/android-ndk-r25b"
           
           # Create buildozer.spec for armeabi-v7a
           cat > buildozer_armeabi-v7a.spec << 'SPECEOF'
@@ -211,6 +223,7 @@ jobs:
           echo "armeabi-v7a build exit code: $BUILD_EXIT"
           
           mkdir -p bin/armeabi-v7a
+          find . -name "*.apk" -type f -exec cp {} bin/armeabi-v7a/ \; 2>/dev/null || true
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/armeabi-v7a/ \; 2>/dev/null || true
           echo "armeabi-v7a APKs: $(ls bin/armeabi-v7a/*.apk 2>/dev/null | wc -l)"
           
@@ -232,14 +245,6 @@ jobs:
           echo "============================================"
           echo "BUILDING arm64-v8a with NDK 25b + Python 3.10"
           echo "============================================"
-          
-          # Link NDK 25b
-          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          BUILDOZER_NDK_DIR="$HOME/.buildozer/android/platform"
-          mkdir -p "$BUILDOZER_NDK_DIR"
-          rm -f "$BUILDOZER_NDK_DIR/android-ndk-r25b" 2>/dev/null || true
-          ln -sf "$NDK_PATH" "$BUILDOZER_NDK_DIR/android-ndk-r25b"
-          echo "✅ Linked NDK 25b: $NDK_PATH → $BUILDOZER_NDK_DIR/android-ndk-r25b"
           
           # Create buildozer.spec for arm64-v8a
           cat > buildozer_arm64-v8a.spec << 'SPECEOF'
@@ -318,6 +323,7 @@ jobs:
           echo "arm64-v8a build exit code: $BUILD_EXIT"
           
           mkdir -p bin/arm64-v8a
+          find . -name "*.apk" -type f -exec cp {} bin/arm64-v8a/ \; 2>/dev/null || true
           find ~/.buildozer -name "*.apk" -type f -exec cp {} bin/arm64-v8a/ \; 2>/dev/null || true
           echo "arm64-v8a APKs: $(ls bin/arm64-v8a/*.apk 2>/dev/null | wc -l)"
           
