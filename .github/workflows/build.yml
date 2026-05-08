@@ -64,7 +64,7 @@ jobs:
           chmod +x $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/*
           
           mkdir -p licenses
-          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > licenses/android-sdk-license
+          printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n" > licenses/android-sdk-license
           
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
             "platform-tools" \
@@ -81,76 +81,103 @@ jobs:
       - name: Download NDK 25b
         id: ndk
         run: |
-          NDK_BASE="$HOME/.buildozer/android/platform"
-          mkdir -p "$NDK_BASE"
-          FINAL_DIR="$NDK_BASE/android-ndk-r25b"
+          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r25b"
+          mkdir -p "$(dirname "$NDK_DIR")"
           
-          if [ -f "$FINAL_DIR/ndk-build" ]; then
-            echo "NDK already exists"
-            echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
+          if [ -f "$NDK_DIR/ndk-build" ]; then
+            echo "NDK already exists at $NDK_DIR"
+            echo "ndk-path=$NDK_DIR" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          for NDK_URL in \
+          for url in \
             "https://dl.google.com/android/repository/android-ndk-r25b-linux.zip" \
             "https://dl.google.com/android/repository/android-ndk-r25c-linux.zip"; do
             
-            echo "Downloading: $NDK_URL"
-            curl -sL --connect-timeout 10 --max-time 120 -o /tmp/ndk.zip "$NDK_URL"
+            echo "Downloading: $url"
+            curl -sL --connect-timeout 10 --max-time 180 -o /tmp/ndk.zip "$url"
             
-            if [ -f /tmp/ndk.zip ] && [ $(stat -c%s /tmp/ndk.zip 2>/dev/null) -gt 1000000 ]; then
-              rm -rf /tmp/ndk-extract
-              mkdir -p /tmp/ndk-extract
-              unzip -q -o /tmp/ndk.zip -d /tmp/ndk-extract
-              rm -f /tmp/ndk.zip
-              
-              NDK_DIR=$(find /tmp/ndk-extract -maxdepth 2 -name "ndk-build" -type f | head -1 | xargs dirname)
-              
-              if [ -n "$NDK_DIR" ] && [ -f "$NDK_DIR/ndk-build" ]; then
-                rm -rf "$FINAL_DIR"
-                mv "$NDK_DIR" "$FINAL_DIR"
-                rm -rf /tmp/ndk-extract
-                echo "ndk-path=$FINAL_DIR" >> $GITHUB_OUTPUT
-                echo "✅ NDK ready"
-                exit 0
-              fi
-              rm -rf /tmp/ndk-extract
+            if [ -f /tmp/ndk.zip ] && [ $(stat -c%s /tmp/ndk.zip 2>/dev/null || echo 0) -gt 1000000 ]; then
+              echo "Download successful ($(stat -c%s /tmp/ndk.zip) bytes)"
+              break
             fi
             rm -f /tmp/ndk.zip
           done
           
-          echo "❌ Failed to download NDK"
-          exit 1
-      
+          if [ ! -f /tmp/ndk.zip ]; then
+            echo "❌ Failed to download NDK from all sources"
+            exit 1
+          fi
+          
+          rm -rf /tmp/ndk-extract "$NDK_DIR"
+          mkdir -p /tmp/ndk-extract
+          unzip -q -o /tmp/ndk.zip -d /tmp/ndk-extract
+          rm -f /tmp/ndk.zip
+          
+          NDK_SRC=$(find /tmp/ndk-extract -maxdepth 2 -name "ndk-build" -type f | head -1 | xargs dirname)
+          
+          if [ -z "$NDK_SRC" ] || [ ! -f "$NDK_SRC/ndk-build" ]; then
+            echo "❌ Could not find ndk-build in extracted files"
+            ls -la /tmp/ndk-extract/
+            exit 1
+          fi
+          
+          mv "$NDK_SRC" "$NDK_DIR"
+          rm -rf /tmp/ndk-extract
+          
+          echo "ndk-path=$NDK_DIR" >> $GITHUB_OUTPUT
+          echo "✅ NDK 25b installed to $NDK_DIR"
+
       - name: Clean old cache
         run: |
           rm -rf ~/.buildozer/android/platform/build-* 2>/dev/null || true
           rm -rf .buildozer 2>/dev/null || true
+          echo "Cleaned"
 
       - name: Cache build dependencies
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v11-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v12-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v11-
+            ${{ runner.os }}-buildozer-v12-
 
-      - name: Verify files
+      - name: Verify files exist
         run: |
-          [ -f "main.py" ] || { echo "❌ main.py MISSING"; exit 1; }
-          [ -f "service.py" ] || { echo "❌ service.py MISSING"; exit 1; }
-          echo "✅ Files present"
+          if [ -f "main.py" ]; then 
+            echo "✅ main.py found ($(wc -l < main.py) lines)"
+          else 
+            echo "❌ main.py MISSING"
+            exit 1
+          fi
+          if [ -f "service.py" ]; then 
+            echo "✅ service.py found ($(wc -l < service.py) lines)"
+          else 
+            echo "❌ service.py MISSING"
+            exit 1
+          fi
+          echo ""
+          echo "=== Repository files ==="
+          ls -la
 
       - name: Build APK
         id: build
         run: |
+          echo "============================================"
+          echo "BUILDING Multi-Arch APK"
+          echo "NDK: 25b"
+          echo "Archs: arm64-v8a, armeabi-v7a"
+          echo "Kivy: master (for Python 3.14 compat)"
+          echo "============================================"
+          
           NDK_PATH="${{ steps.ndk.outputs.ndk-path }}"
-          echo "NDK: $NDK_PATH"
           
           if [ ! -f "$NDK_PATH/ndk-build" ]; then
-            echo "❌ NDK missing!"
+            echo "❌ NDK not found at $NDK_PATH"
             exit 1
           fi
+          
+          echo "✅ NDK verified at $NDK_PATH"
           
           unset ANDROID_NDK_ROOT ANDROID_NDK_HOME NDK_ROOT
           export ANDROID_NDK_HOME="$NDK_PATH"
@@ -167,7 +194,7 @@ jobs:
           source.exclude_dirs = tests, bin, venv
           source.exclude_patterns = license,images/*/*.jpg
           version = 0.1
-          requirements = python3,kivy==2.3.0,pyjnius,android,plyer
+          requirements = python3,https://github.com/kivy/kivy/archive/refs/heads/master.zip,pyjnius,android,plyer
           orientation = portrait
           services = Service:service.py
           service.source = %(source.dir)s/service.py
@@ -199,16 +226,25 @@ jobs:
           android.logcat = 1
           android.release_artifact = apk
           [buildozer]
-          log_level = 3
+          log_level = 2
           SPECEOF
           
-          export AUTORECONF=/usr/bin/autoreconf AUTOCONF=/usr/bin/autoconf
-          export AUTOMAKE=/usr/bin/automake ACLOCAL=/usr/bin/aclocal LIBTOOLIZE=/usr/bin/libtoolize
+          echo "=== buildozer.spec created ==="
+          echo ""
+          echo "requirements: python3 + kivy master (GitHub) + pyjnius + android + plyer"
+          echo ""
+          
+          export AUTORECONF=/usr/bin/autoreconf
+          export AUTOCONF=/usr/bin/autoconf
+          export AUTOMAKE=/usr/bin/automake
+          export ACLOCAL=/usr/bin/aclocal
+          export LIBTOOLIZE=/usr/bin/libtoolize
           
           cat > /tmp/autoreconf << 'AUTOWRAP'
           #!/bin/bash
           for f in configure configure.ac; do
             if [ -f "$f" ] && grep -q "LT_SYS_SYMBOL_USCORE" "$f" 2>/dev/null; then
+              echo "[FIX] Patching $f..."
               sed -i 's/LT_SYS_SYMBOL_USCORE/AC_CHECK_FUNCS(rindex)/g' "$f"
             fi
           done
@@ -217,34 +253,50 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
-          # Run buildozer and capture exit code
+          echo "=== STARTING BUILD ==="
+          echo ""
+          
           set +e
-          buildozer android debug 2>&1 | tee build_multiarch.log
+          buildozer android debug 2>&1 | tee build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           set -e
           
           echo ""
-          echo "=== BUILD FINISHED (exit: $BUILD_EXIT) ==="
+          echo "=== BUILD FINISHED (exit code: $BUILD_EXIT) ==="
           
-          # Extract the real error
-          echo ""
-          echo "=== Error Summary ==="
-          grep -iE "^\s*(\[ERROR\]|Error:|Command failed:|fatal:)" build_multiarch.log | tail -20
-          
-          # Search for APK
+          # Collect any APK found on the system
           mkdir -p apk-output
-          find /home/runner -name "*.apk" -type f 2>/dev/null | while read f; do
-            echo "APK: $f"
-            cp "$f" apk-output/
+          find /home/runner -name "*.apk" -type f 2>/dev/null | while read apk; do
+            echo "Found APK: $apk"
+            cp "$apk" apk-output/
           done
           
+          # Also check project bin
+          cp bin/*.apk apk-output/ 2>/dev/null || true
+          
+          echo ""
           if ls apk-output/*.apk 2>/dev/null 1>&2; then
             echo "apk_found=true" >> $GITHUB_OUTPUT
-            echo "✅ APK found!"
-            ls -lh apk-output/
+            echo "============================================"
+            echo "✅ APK CREATED SUCCESSFULLY!"
+            echo "============================================"
+            ls -lh apk-output/*.apk
           else
             echo "apk_found=false" >> $GITHUB_OUTPUT
-            echo "❌ No APK found"
+            echo "============================================"
+            echo "❌ NO APK FOUND"
+            echo "============================================"
+            echo ""
+            echo "=== Build error summary ==="
+            echo ""
+            echo "C compilation errors with 'too few arguments':"
+            grep -c "error: too few arguments to function call" build.log 2>/dev/null || echo "0"
+            echo ""
+            echo "C compilation errors with 'member reference':"  
+            grep -c "error: member reference type" build.log 2>/dev/null || echo "0"
+            echo ""
+            echo "Other errors:"
+            grep -i "\[ERROR\]\|Command failed\|fatal:" build.log | grep -v "configure\|checking\|clang.*unsupported\|config.pxi" | tail -15
           fi
           
           exit $BUILD_EXIT
@@ -261,19 +313,33 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ github.run_number }}
-          path: build_multiarch.log
+          path: build.log
           retention-days: 7
       
-      - name: Summary
+      - name: Build Summary
         if: always()
         run: |
           echo "============================================"
+          echo "BUILD SUMMARY"
+          echo "============================================"
+          echo "Job Status: ${{ job.status }}"
+          echo ""
+          echo "Configuration:"
+          echo "  • NDK: 25b"
+          echo "  • Python: 3.14 (p4a develop default)"
+          echo "  • Kivy: master branch (GitHub)"
+          echo "  • Architectures: arm64-v8a + armeabi-v7a"
+          echo "  • Output: Single fat APK"
+          echo ""
           if ls apk-output/*.apk 2>/dev/null 1>&2; then
             echo "✅ APK CREATED!"
-            ls -lh apk-output/*.apk
-            echo "📥 Download: MultiArch-APK-${{ github.run_number }}"
+            ls -lh apk-output/*.apk 2>/dev/null
+            echo ""
+            echo "📥 Download artifact: MultiArch-APK-${{ github.run_number }}"
           else
-            echo "❌ No APK"
-            echo "📥 Download build-logs-${{ github.run_number }}"
+            echo "❌ NO APK CREATED"
+            echo ""
+            echo "📥 Download artifact: build-logs-${{ github.run_number }}"
+            echo "   to inspect build errors"
           fi
           echo "============================================"
