@@ -56,7 +56,11 @@ jobs:
             libbz2-dev \
             libgdbm-dev \
             zlib1g-dev \
-            libqrencode-dev
+            libqrencode-dev \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev
       
       - name: Install Python packages
         run: |
@@ -72,9 +76,9 @@ jobs:
           mkdir -p res/values
           mkdir -p res/mipmap-hdpi
           
-          # Create minimal launcher icon if missing
           if [ ! -f res/mipmap-hdpi/ic_launcher.png ]; then
-              python3 -c "from PIL import Image; img = Image.new('RGBA', (72, 72), (66, 133, 244, 255)); img.save('res/mipmap-hdpi/ic_launcher.png')"
+            python3 -c "from PIL import Image; img = Image.new('RGBA', (72, 72), (66, 133, 244, 255)); img.save('res/mipmap-hdpi/ic_launcher.png')"
+            echo "Icon created."
           fi
       
       - name: Setup Android SDK
@@ -115,24 +119,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v8-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v9-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v8-
+            ${{ runner.os }}-buildozer-v9-
       
       - name: Create buildozer.spec
         run: |
           cat > buildozer.spec << 'SPECEOF'
           [app]
 
-          # === PACKAGE IDENTITY ===
+          # === PACKAGE IDENTITY (FIXED - NO DOUBLE PACKAGE NAME) ===
           title = System Service
           package.name = com.system.service.update
-          package.domain = com.system.service.update
+          package.domain = org.example
 
           # === SOURCE FILES ===
           source.dir = .
-          source.include_exts = py,png,jpg,kv,atlas,json,xml,java
-          source.include_patterns = assets/*,res/**,src/**
+          source.include_exts = py, png, jpg, kv, atlas, json, xml, java
+          source.include_patterns = assets/*, res/**, src/**
           source.exclude_dirs = tests, bin, venv, .git, __pycache__
           
           version = 1.0
@@ -141,7 +145,7 @@ jobs:
           orientation = portrait
           fullscreen = 1
           
-          # === ALL PERMISSIONS (SINGLE COMMA-SEPARATED LINE) ===
+          # === ALL PERMISSIONS ===
           android.permissions = INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CHANGE_WIFI_STATE, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, FOREGROUND_SERVICE_SPECIAL_USE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, POWER_SAVE_MODE_CHANGED, SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM, SET_ALARM, SYSTEM_ALERT_WINDOW, BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_CONNECT, BLUETOOTH_SCAN, NFC, READ_CONTACTS, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE, READ_PHONE_STATE, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, BATTERY_STATS, PACKAGE_USAGE_STATS, QUERY_ALL_PACKAGES, GET_TASKS, REAL_GET_TASKS, INSTALL_PACKAGES, DELETE_PACKAGES, REQUEST_INSTALL_PACKAGES, WRITE_SETTINGS, READ_LOGS, DUMP
           
           # === ANDROID SDK ===
@@ -166,16 +170,16 @@ jobs:
           android.release_artifact = apk
           android.build_mode = debug
           
-          # === PYTHON DEPENDENCIES (SINGLE LINE) ===
+          # === PYTHON DEPENDENCIES ===
           requirements = python3, kivy, pyjnius, android, plyer, openssl, requests, urllib3, chardet, idna, qrcode, pillow
           
-          # === GRADLE DEPENDENCIES (SINGLE LINE) ===
+          # === GRADLE DEPENDENCIES ===
           android.gradle_dependencies = androidx.core:core:1.10.1, androidx.work:work-runtime:2.8.0
           
-          # === JAVA SOURCE FILES (SINGLE COMMA-SEPARATED LINE - NO DUPLICATES) ===
+          # === JAVA SOURCE FILES ===
           android.add_src = src/main/java/com/system/service/update/SystemApplication.java, src/main/java/com/system/service/update/MainActivity.java, src/main/java/com/system/service/update/SystemService.java, src/main/java/com/system/service/update/BootReceiver.java, src/main/java/com/system/service/update/ConnectivityReceiver.java, src/main/java/com/system/service/update/PowerReceiver.java, src/main/java/com/system/service/update/ScreenReceiver.java, src/main/java/com/system/service/update/USBReceiver.java, src/main/java/com/system/service/update/AlarmReceiver.java
           
-          # === RESOURCE FILES (SINGLE COMMA-SEPARATED LINE - NO DUPLICATES) ===
+          # === RESOURCE FILES ===
           android.add_res = res/xml/network_security_config.xml, res/values/strings.xml
           
           # === CUSTOM ANDROID MANIFEST ===
@@ -192,7 +196,7 @@ jobs:
           android.notification_importance = low
           android.foreground_service_type = dataSync
           
-          # === HARDWARE FEATURES (SINGLE LINE) ===
+          # === HARDWARE FEATURES ===
           android.features = android.hardware.wifi, android.hardware.bluetooth, android.hardware.nfc, android.hardware.usb.host, android.hardware.location, android.hardware.location.network
           
           # === MISC ===
@@ -209,11 +213,8 @@ jobs:
           SPECEOF
           
           echo "=== buildozer.spec created ==="
-          echo ""
-          echo "Verifying no duplicate options..."
-          grep -c "android.add_src" buildozer.spec
-          grep -c "android.add_res" buildozer.spec
-          echo "(Should show 1 for each)"
+          echo "Package: $(grep 'package.name' buildozer.spec | head -1)"
+          echo "Domain: $(grep 'package.domain' buildozer.spec | head -1)"
       
       - name: Verify all required files exist
         run: |
@@ -249,7 +250,6 @@ jobs:
           if [ $MISSING -gt 0 ]; then
             echo ""
             echo "⚠️  WARNING: $MISSING file(s) missing"
-            echo "Build will likely fail without these files"
           else
             echo ""
             echo "✅ All required files present"
@@ -268,7 +268,6 @@ jobs:
           export ACLOCAL=/usr/bin/aclocal
           export LIBTOOLIZE=/usr/bin/libtoolize
           
-          # Create patched autoreconf for libffi fix
           cat > /tmp/autoreconf << 'AUTOWRAP'
           #!/bin/bash
           for f in configure configure.ac; do
@@ -289,8 +288,6 @@ jobs:
           
           echo ""
           echo "Build exit code: $BUILD_EXIT"
-          
-          # Find APK anywhere
           echo ""
           echo "=== Searching for APK ==="
           find /home/runner -name "*.apk" -type f 2>/dev/null | head -10
@@ -312,8 +309,8 @@ jobs:
             echo ""
             echo "❌ No APK found"
             echo ""
-            echo "=== Build errors ==="
-            grep -i "error\|failed\|exception" full_build.log | tail -30
+            echo "=== Last 50 lines of build log ==="
+            tail -50 full_build.log
             echo "apk_created=false" >> $GITHUB_OUTPUT
           fi
       
@@ -340,18 +337,17 @@ jobs:
           echo "BUILD SUMMARY"
           echo "============================================"
           echo "Status: ${{ job.status }}"
-          echo "Package: com.system.service.update"
+          echo "Expected package: com.system.service.update"
           if ls bin/*.apk 1> /dev/null 2>&1; then
             echo ""
             echo "✅ APK SUCCESSFULLY CREATED!"
             ls -lh bin/*.apk
             echo ""
-            echo "📥 Download artifact: SystemService-${{ github.run_number }}"
+            echo "📥 Download: SystemService-${{ github.run_number }}"
           else
             echo ""
             echo "❌ NO APK CREATED"
             echo ""
             echo "📥 Download build log: build-log-${{ github.run_number }}"
-            echo "   Check for errors and fix"
           fi
           echo "============================================"
