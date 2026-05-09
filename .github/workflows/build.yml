@@ -171,7 +171,7 @@ jobs:
           android.build_mode = debug
           
           # === PYTHON DEPENDENCIES (SINGLE LINE) ===
-          requirements = python3==3.10.12, kivy==2.3.0, pyjnius, android, plyer, openssl, requests, urllib3, chardet, idna, qrcode, pillow
+          requirements = python3, kivy, pyjnius, android, plyer, openssl, requests, urllib3, chardet, idna, qrcode, pillow
           
           # === GRADLE DEPENDENCIES (SINGLE LINE) ===
           android.gradle_dependencies = androidx.core:core:1.10.1, androidx.work:work-runtime:2.8.0
