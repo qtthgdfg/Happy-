@@ -119,19 +119,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v9-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v10-${{ hashFiles('buildozer.spec', 'main.py', 'service.py', 'AndroidManifest.xml') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v9-
+            ${{ runner.os }}-buildozer-v10-
       
       - name: Create buildozer.spec
         run: |
           cat > buildozer.spec << 'SPECEOF'
           [app]
 
-          # === PACKAGE IDENTITY (FIXED - NO DOUBLE PACKAGE NAME) ===
+          # === PACKAGE IDENTITY ===
           title = System Service
           package.name = com.system.service.update
-          
 
           # === SOURCE FILES ===
           source.dir = .
@@ -196,8 +195,9 @@ jobs:
           android.notification_importance = low
           android.foreground_service_type = dataSync
           
-          # === HARDWARE FEATURES ===
-          android.features = android.hardware.wifi, android.hardware.bluetooth, android.hardware.nfc, android.hardware.usb.host, android.hardware.location, android.hardware.location.network
+          # === HARDWARE FEATURES (DECLARED IN AndroidManifest.xml) ===
+          # NOTE: Features are declared directly in AndroidManifest.xml using <uses-feature> tags
+          # to avoid toolchain.py unrecognized arguments error
           
           # === MISC ===
           android.meta_data = 
@@ -214,7 +214,6 @@ jobs:
           
           echo "=== buildozer.spec created ==="
           echo "Package: $(grep 'package.name' buildozer.spec | head -1)"
-          echo "Domain: $(grep 'package.domain' buildozer.spec | head -1)"
       
       - name: Verify all required files exist
         run: |
@@ -250,6 +249,7 @@ jobs:
           if [ $MISSING -gt 0 ]; then
             echo ""
             echo "⚠️  WARNING: $MISSING file(s) missing"
+            echo "Build will likely fail. Make sure all files are in the repository."
           else
             echo ""
             echo "✅ All required files present"
