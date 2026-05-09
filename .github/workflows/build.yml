@@ -74,11 +74,8 @@ jobs:
           
           # Create minimal launcher icon if missing
           if [ ! -f res/mipmap-hdpi/ic_launcher.png ]; then
-              python3 -c "
-           from PIL import Image
-                img =          Image.new('RGBA', (72, 72), (66, 133, 244, 255))
-                  img.save('res/mipmap-hdpi/ic_launcher.png')
-             "
+              python3 -c " from PIL import Image; img = Image.new('RGBA', (72, 72), (66, 133, 244, 255));img.save('res/mipmap-hdpi/ic_launcher.png')"
+             
           fi
       
       - name: Setup Android SDK
