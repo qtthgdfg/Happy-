@@ -131,7 +131,7 @@ jobs:
           # === PACKAGE IDENTITY (FIXED - NO DOUBLE PACKAGE NAME) ===
           title = System Service
           package.name = com.system.service.update
-          package.domain = org.example
+          
 
           # === SOURCE FILES ===
           source.dir = .
