@@ -7,6 +7,10 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.app.ActivityManager;
+import android.content.pm.PackageManager;
 
 public class BootReceiver extends BroadcastReceiver {
     
