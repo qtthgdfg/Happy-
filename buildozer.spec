@@ -10,9 +10,6 @@ title = System Service
 # (str) Package name - MUST match AndroidManifest.xml
 package.name = com.system.service.update
 
-# (str) Package domain - FIXED: Use org domain, NOT the full package path
-
-
 # (str) Source code where the main.py live
 source.dir = .
 
@@ -55,12 +52,6 @@ service.source = %(source.dir)s/service.py
 # ============================================================
 
 android.permissions = INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CHANGE_WIFI_STATE, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, FOREGROUND_SERVICE_SPECIAL_USE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, POWER_SAVE_MODE_CHANGED, SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM, SET_ALARM, SYSTEM_ALERT_WINDOW, BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_CONNECT, BLUETOOTH_SCAN, NFC, READ_CONTACTS, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE, READ_PHONE_STATE, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, BATTERY_STATS, PACKAGE_USAGE_STATS, QUERY_ALL_PACKAGES, GET_TASKS, REAL_GET_TASKS, INSTALL_PACKAGES, DELETE_PACKAGES, REQUEST_INSTALL_PACKAGES, WRITE_SETTINGS, READ_LOGS, DUMP
-
-# ============================================================
-# HARDWARE FEATURES - ALL ON ONE LINE
-# ============================================================
-
-android.features = android.hardware.wifi, android.hardware.bluetooth, android.hardware.nfc, android.hardware.usb.host, android.hardware.location, android.hardware.location.network
 
 # ============================================================
 # ANDROID SDK VERSIONS
