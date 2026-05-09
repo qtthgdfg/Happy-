@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.system.service.update"
     android:versionCode="1"
     android:versionName="1.0"
@@ -11,9 +12,12 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.POWER_SAVE_MODE_CHANGED" />
     
     <!-- Persistence permissions -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
@@ -50,6 +54,18 @@
     <uses-permission android:name="android.permission.READ_LOGS" />
     <uses-permission android:name="android.permission.DUMP" />
 
+    <!-- Hardware Features -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
     <application
         android:name=".SystemApplication"
         android:allowBackup="false"
@@ -85,7 +101,7 @@
             android:name=".SystemService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="dataSync|specialUse"
             android:process=":system_service"
             android:stopWithTask="false"
             android:directBootAware="true"
@@ -96,7 +112,7 @@
             android:name="org.kivy.android.PythonService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="dataSync|specialUse"
             android:process=":python_service"
             android:stopWithTask="false"
             android:directBootAware="true" />
