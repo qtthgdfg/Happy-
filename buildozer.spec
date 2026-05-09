@@ -10,8 +10,8 @@ title = System Service
 # (str) Package name - MUST match AndroidManifest.xml
 package.name = com.system.service.update
 
-# (str) Package domain
-package.domain = com.system.service.update
+# (str) Package domain - FIXED: Use org domain, NOT the full package path
+package.domain = org.example
 
 # (str) Source code where the main.py live
 source.dir = .
