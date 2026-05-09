@@ -79,7 +79,7 @@ android.debug = True
 # GRADLE DEPENDENCIES - ALL ON ONE LINE
 # ============================================================
 
-android.gradle_dependencies = androidx.core:core:1.10.1, androidx.work:work-runtime:2.8.0
+android.gradle_dependencies = androidx.core:core:1.10.1, androidx.work:work-runtime:2.8.0, org.jetbrains.kotlin:kotlin-stdlib:1.8.0, org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0
 
 # ============================================================
 # JAVA SOURCE FILES - ALL ON ONE LINE
