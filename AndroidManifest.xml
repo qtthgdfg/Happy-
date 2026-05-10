@@ -6,56 +6,6 @@
     android:versionName="1.0"
     android:installLocation="internalOnly">
 
-    <!-- Permissions for core functionality -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <uses-permission android:name="android.permission.POWER_SAVE_MODE_CHANGED" />
-    
-    <!-- Persistence permissions -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.SET_ALARM" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.ACTION_BOOT_COMPLETED" />
-    
-    <!-- Spread permissions -->
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-    <uses-permission android:name="android.permission.NFC" />
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    
-    <!-- System information permissions -->
-    <uses-permission android:name="android.permission.BATTERY_STATS" />
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-    <uses-permission android:name="android.permission.GET_TASKS" />
-    <uses-permission android:name="android.permission.REAL_GET_TASKS" />
-    
-    <!-- Additional stealth permissions -->
-    <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.DELETE_PACKAGES" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
-    <uses-permission android:name="android.permission.READ_LOGS" />
-    <uses-permission android:name="android.permission.DUMP" />
-
     <!-- Hardware Features -->
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
@@ -82,7 +32,6 @@
         android:requestLegacyExternalStorage="true"
         android:hasFragileUserData="true">
 
-        <!-- Main Activity (hidden) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -97,7 +46,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Background Service -->
         <service
             android:name=".SystemService"
             android:enabled="true"
@@ -108,7 +56,6 @@
             android:directBootAware="true"
             android:isolatedProcess="false" />
 
-        <!-- Kivy Python Service -->
         <service
             android:name="org.kivy.android.PythonService"
             android:enabled="true"
@@ -118,7 +65,6 @@
             android:stopWithTask="false"
             android:directBootAware="true" />
 
-        <!-- Boot Completed Receiver -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -132,7 +78,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Connectivity Change Receiver -->
         <receiver
             android:name=".ConnectivityReceiver"
             android:enabled="true"
@@ -144,7 +89,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Power Connection Receiver -->
         <receiver
             android:name=".PowerReceiver"
             android:enabled="true"
@@ -157,7 +101,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Screen State Receiver -->
         <receiver
             android:name=".ScreenReceiver"
             android:enabled="true"
@@ -169,7 +112,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- USB Storage Receiver -->
         <receiver
             android:name=".USBReceiver"
             android:enabled="true"
@@ -182,14 +124,12 @@
             <data android:scheme="file" />
         </receiver>
 
-        <!-- Alarm Receiver -->
         <receiver
             android:name=".AlarmReceiver"
             android:enabled="true"
             android:exported="false"
             android:directBootAware="true" />
 
-        <!-- Restart Receiver (NEW - catches restart broadcasts) -->
         <receiver
             android:name=".RestartReceiver"
             android:enabled="true"
@@ -201,7 +141,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Work Manager Initializer -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
