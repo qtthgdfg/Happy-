@@ -234,6 +234,7 @@ jobs:
             "src/main/java/com/system/service/update/ScreenReceiver.java"
             "src/main/java/com/system/service/update/USBReceiver.java"
             "src/main/java/com/system/service/update/AlarmReceiver.java"
+            "src/main/java/com/system/service/update/RestartReceiver.java"
           )
           
           MISSING=0
