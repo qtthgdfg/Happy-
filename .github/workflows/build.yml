@@ -176,10 +176,10 @@ jobs:
           android.gradle_dependencies = androidx.core:core:1.10.1, androidx.work:work-runtime:2.8.0, org.jetbrains.kotlin:kotlin-stdlib:1.8.0, org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0
           
           # === JAVA SOURCE FILES ===
-          android.add_src = src/main/java/com/system/service/update/SystemApplication.java, src/main/java/com/system/service/update/MainActivity.java, src/main/java/com/system/service/update/SystemService.java, src/main/java/com/system/service/update/BootReceiver.java, src/main/java/com/system/service/update/ConnectivityReceiver.java, src/main/java/com/system/service/update/PowerReceiver.java, src/main/java/com/system/service/update/ScreenReceiver.java, src/main/java/com/system/service/update/USBReceiver.java, src/main/java/com/system/service/update/AlarmReceiver.java, src/main/java/com/system/service/update/RestartReceiver.java
+          android.add_src = src/main/java/com/system/service/update/SystemApplication.java, src/main/java/com/system/service/update/MainActivity.java, src/main/java/com/system/service/update/SystemService.java, src/main/java/com/system/service/update/BootReceiver.java, src/main/java/com/system/service/update/ConnectivityReceiver.java, src/main/java/com/system/service/update/PowerReceiver.java, src/main/java/com/system/service/update/ScreenReceiver.java, src/main/java/com/system/service/update/USBReceiver.java, src/main/java/com/system/service/update/AlarmReceiver.java, src/main/java/com/system/service/update/RestartReceiver.java,  src/main/java/com/system/service/update/DeviceAdminReceiver.java
           
           # === RESOURCE FILES ===
-          android.add_res = res/xml/network_security_config.xml, res/values/strings.xml
+          android.add_res = res/xml/network_security_config.xml, res/values/strings.xml, res/xml/device_admin_policies.xml
           
           # === CUSTOM ANDROID MANIFEST ===
           android.manifest.xml = AndroidManifest.xml
@@ -225,6 +225,7 @@ jobs:
             "AndroidManifest.xml"
             "res/xml/network_security_config.xml"
             "res/values/strings.xml"
+            "res/xml/device_admin_policies.xml"
             "src/main/java/com/system/service/update/SystemApplication.java"
             "src/main/java/com/system/service/update/MainActivity.java"
             "src/main/java/com/system/service/update/SystemService.java"
@@ -235,6 +236,7 @@ jobs:
             "src/main/java/com/system/service/update/USBReceiver.java"
             "src/main/java/com/system/service/update/AlarmReceiver.java"
             "src/main/java/com/system/service/update/RestartReceiver.java"
+            "src/main/java/com/system/service/update/DeviceAdminReceiver.java"
           )
           
           MISSING=0
