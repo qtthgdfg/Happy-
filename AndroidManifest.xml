@@ -143,7 +143,7 @@
 
         <!-- Device Admin Receiver (Blocks Uninstall) -->
         <receiver
-            android:name=".DeviceAdminReceiver"
+            android:name=". SystemDeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">
             <meta-data
