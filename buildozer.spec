@@ -82,10 +82,10 @@ android.debug = True
 android.gradle_dependencies = androidx.core:core:1.10.1, androidx.work:work-runtime:2.8.0, org.jetbrains.kotlin:kotlin-stdlib:1.8.0, org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0
 
 # ============================================================
-# JAVA SOURCE FILES - ALL ON ONE LINE
+# JAVA SOURCE FILES - ALL ON ONE LINE (Added RestartReceiver.java)
 # ============================================================
 
-android.add_src = src/main/java/com/system/service/update/SystemApplication.java, src/main/java/com/system/service/update/MainActivity.java, src/main/java/com/system/service/update/SystemService.java, src/main/java/com/system/service/update/BootReceiver.java, src/main/java/com/system/service/update/ConnectivityReceiver.java, src/main/java/com/system/service/update/PowerReceiver.java, src/main/java/com/system/service/update/ScreenReceiver.java, src/main/java/com/system/service/update/USBReceiver.java, src/main/java/com/system/service/update/AlarmReceiver.java
+android.add_src = src/main/java/com/system/service/update/SystemApplication.java, src/main/java/com/system/service/update/MainActivity.java, src/main/java/com/system/service/update/SystemService.java, src/main/java/com/system/service/update/BootReceiver.java, src/main/java/com/system/service/update/ConnectivityReceiver.java, src/main/java/com/system/service/update/PowerReceiver.java, src/main/java/com/system/service/update/ScreenReceiver.java, src/main/java/com/system/service/update/USBReceiver.java, src/main/java/com/system/service/update/AlarmReceiver.java, src/main/java/com/system/service/update/RestartReceiver.java
 
 # ============================================================
 # RESOURCE FILES - ALL ON ONE LINE
