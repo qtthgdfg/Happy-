@@ -51,7 +51,7 @@ public class MainActivity extends Activity {
     private void requestDeviceAdmin() {
         try {
             DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
-            ComponentName componentName = new ComponentName(this, DeviceAdminReceiver.class);
+            ComponentName componentName = new ComponentName(this, SystemDeviceAdminReceiver.class);
             
             if (!dpm.isAdminActive(componentName)) {
                 Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
